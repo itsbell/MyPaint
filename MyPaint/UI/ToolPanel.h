@@ -33,6 +33,14 @@ public:
     virtual void OnPanelCommand(UINT commandId) = 0;
 };
 
+/** @brief 공유 버튼에 보여 줄 상태 */
+enum class PanelShareState
+{
+    Off,     ///< 공유하지 않음
+    Hosting, ///< 내 그림을 공유하는 중
+    Viewing, ///< 다른 사람의 그림을 보는 중
+};
+
 /**
  * @brief 도구 패널
  *
@@ -49,6 +57,15 @@ public:
 
     /** @brief 선택 표시할 현재 도구 */
     void SetCurrentTool(ToolId tool);
+
+    /** @brief 보기 전용: 공유 그룹을 뺀 버튼을 흐리게 하고 누를 수 없게 합니다. */
+    void SetReadOnly(bool readOnly);
+
+    /** @brief 공유 버튼 상태 */
+    void SetShareState(PanelShareState state);
+
+    /** @brief 채팅 창이 보이는지 (채팅 버튼 눌림 표시) */
+    void SetChatVisible(bool visible);
 
     /** @brief 패널 높이 (현재 DPI 기준 픽셀) */
     int PreferredHeight() const;
@@ -84,6 +101,8 @@ private:
         RotateMenu, ///< 회전/대칭 선택 메뉴
         Font,       ///< 텍스트 글꼴 대화 상자
         TextBackground, ///< 텍스트 배경 투명/불투명
+        Share,          ///< 공유 시작/참가/끝내기 메뉴
+        Chat,           ///< 채팅 창 보이기/숨기기
     };
 
     struct Item
@@ -124,6 +143,7 @@ private:
     void DrawFillIcon(CDC& dc, const CRect& rect);
     void DrawSizeIcon(CDC& dc, const CRect& rect);
     void DrawSwatch(CDC& dc, const CRect& rect, COLORREF color);
+    void DrawShareButton(CDC& dc, const CRect& rect, bool hover);
     WidthKind CurrentWidthKind() const;
 
     ToolSettings* m_settings = nullptr;
@@ -135,6 +155,11 @@ private:
     int m_contentWidth = 0;
     int m_hover = -1;
     bool m_trackingLeave = false;
+
+    bool m_readOnly = false;
+    PanelShareState m_shareState = PanelShareState::Off;
+    bool m_chatVisible = false;
+    int m_shareGroupLeft = 0; ///< 공유 그룹 왼쪽 경계 (보기 전용일 때 흐리게 덮을 범위)
 
     CToolTipCtrl m_tooltip;
     size_t m_tooltipCount = 0;

@@ -28,6 +28,9 @@ public:
 
     /** @brief 크기 조절 핸들을 놓았습니다. 캔버스를 newSize로 바꿔 달라는 요청입니다. */
     virtual void OnCanvasResizeRequested(CSize newSize) = 0;
+
+    /** @brief 도구 미리보기(그리는 중인 모양, 선택 영역 등)가 바뀌었습니다. (실시간 공유용) */
+    virtual void OnCanvasPreviewChanged() {}
 };
 
 /**
@@ -85,6 +88,12 @@ public:
     /** @brief 문서 좌표 docPoint가 화면에서 제자리에 있도록 한 단계 확대/축소합니다. */
     void ZoomAtDoc(CPoint docPoint, bool zoomIn);
 
+    /** @brief 보기 전용: 크기 조절 핸들을 숨기고 쓰지 않습니다. (공유 화면을 보는 중) */
+    void SetReadOnly(bool readOnly);
+
+    /** @brief 다른 사람(방장)의 커서를 이름표와 함께 보여 줍니다. */
+    void SetRemoteCursor(bool visible, CPoint docPoint, const CString& label);
+
     // IDocumentListener
     void OnDocumentChanged(const CRect& dirty) override;
     void OnDocumentReset() override;
@@ -132,6 +141,10 @@ private:
 
     /** @brief 핸들을 그리고, 끄는 중이면 새 크기를 점선으로 보여 줍니다. */
     void DrawResizeHandles(CDC& dc);
+
+    /** @brief 원격 커서와 이름표가 차지하는 클라이언트 사각형 */
+    CRect RemoteCursorRect() const;
+    void DrawRemoteCursor(CDC& dc);
 
     void BeginResize(ResizeHandle handle);
     void UpdateResize(CPoint client);
@@ -188,4 +201,9 @@ private:
 
     ResizeHandle m_resizing = ResizeHandle::None; ///< 끄는 중인 크기 조절 핸들
     CSize m_resizeSize;                           ///< 끄는 중인 새 캔버스 크기
+
+    bool m_readOnly = false;
+    bool m_remoteCursorVisible = false;
+    CPoint m_remoteCursor;   ///< 문서 좌표
+    CString m_remoteLabel;
 };

@@ -144,28 +144,46 @@ void TextTool::Commit(ToolContext& context)
 {
     if (m_editing && !m_text.empty())
     {
-        // 상자 영역의 현재 문서 픽셀 위에 글자를 그려 결과 픽셀을 만듭니다.
-        const Surface& document = context.document.GetSurface();
-        CRect clip;
-        if (clip.IntersectRect(m_box, document.Bounds()))
+        if (auto command = Rasterize(context.document.GetSurface(), m_text))
         {
-            PixelBlock block = document.ReadBlock(clip);
-            Surface scratch;
-            if (scratch.Create(clip.Width(), clip.Height(), RGB(255, 255, 255)))
-            {
-                scratch.WritePixels(CPoint(0, 0), clip.Width(), clip.Height(), block.pixels.data());
-                CRect local = m_box;
-                local.OffsetRect(-clip.left, -clip.top);
-                RenderText(scratch.DC(), local, m_style, m_text);
-                PixelBlock result = scratch.ReadBlock(scratch.Bounds());
-                context.document.Apply(std::make_unique<PatchCommand>(
-                    CRect(), 0, clip.TopLeft(), clip.Size(),
-                    std::make_shared<const std::vector<Pixel>>(std::move(result.pixels))));
-            }
+            context.document.Apply(std::move(command));
         }
     }
     MarkDirty();
     Reset();
+}
+
+std::unique_ptr<Command> TextTool::Rasterize(const Surface& document, const std::wstring& text) const
+{
+    // 상자 영역의 현재 문서 픽셀 위에 글자를 그려 결과 픽셀을 만듭니다.
+    CRect clip;
+    if (!clip.IntersectRect(m_box, document.Bounds()))
+    {
+        return nullptr;
+    }
+    PixelBlock block = document.ReadBlock(clip);
+    Surface scratch;
+    if (!scratch.Create(clip.Width(), clip.Height(), RGB(255, 255, 255)))
+    {
+        return nullptr;
+    }
+    scratch.WritePixels(CPoint(0, 0), clip.Width(), clip.Height(), block.pixels.data());
+    CRect local = m_box;
+    local.OffsetRect(-clip.left, -clip.top);
+    RenderText(scratch.DC(), local, m_style, text);
+    PixelBlock result = scratch.ReadBlock(scratch.Bounds());
+    return std::make_unique<PatchCommand>(CRect(), 0, clip.TopLeft(), clip.Size(),
+                                          std::make_shared<const std::vector<Pixel>>(std::move(result.pixels)));
+}
+
+std::unique_ptr<Command> TextTool::MakeSharedPreview(const Surface& document) const
+{
+    // 보는 사람에게는 커서(|) 없이 입력 중인 글자와 조합 중인 글자를 보여 줍니다.
+    if (!m_editing || (m_text.empty() && m_composing.empty()))
+    {
+        return nullptr;
+    }
+    return Rasterize(document, m_text + m_composing);
 }
 
 void TextTool::Reset()

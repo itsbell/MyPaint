@@ -6,6 +6,9 @@
 #include "MyPaint.h"
 #include "MyPaintDlg.h"
 
+#include <winsock2.h>
+#pragma comment(lib, "ws2_32.lib")
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -30,9 +33,20 @@ BOOL CMyPaintApp::InitInstance()
 
     CWinApp::InitInstance();
 
-    CMyPaintDlg dlg;
-    m_pMainWnd = &dlg;
-    dlg.DoModal();
+    // 실시간 공유에 쓰는 Winsock을 준비합니다. 실패해도 그림판 기능은 그대로 씁니다.
+    WSADATA wsa{};
+    const bool winsock = ::WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+
+    {
+        CMyPaintDlg dlg;
+        m_pMainWnd = &dlg;
+        dlg.DoModal();
+    }
+
+    if (winsock)
+    {
+        ::WSACleanup();
+    }
 
     // 대화 상자가 닫혔으므로 메시지 펌프를 시작하지 않고 종료합니다.
     return FALSE;

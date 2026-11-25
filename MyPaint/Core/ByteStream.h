@@ -42,6 +42,12 @@ public:
     /** @brief 지금까지 쓴 버퍼 */
     const std::vector<uint8_t>& Buffer() const { return m_buffer; }
 
+    /** @brief 버퍼를 꺼내 갑니다. (이후 writer는 비어 있음) */
+    std::vector<uint8_t> Take() { return std::move(m_buffer); }
+
+    /** @brief 바이트 배열을 그대로 붙입니다. */
+    void WriteBytes(const uint8_t* data, size_t size) { m_buffer.insert(m_buffer.end(), data, data + size); }
+
 private:
     std::vector<uint8_t> m_buffer;
 };
@@ -90,6 +96,10 @@ public:
 
     /** @brief 모두 읽었는지 */
     bool AtEnd() const { return m_pos == m_size; }
+
+    /** @brief 아직 읽지 않은 부분 */
+    const uint8_t* Current() const { return m_data + m_pos; }
+    size_t Remaining() const { return m_size - m_pos; }
 
 private:
     void Require(size_t bytes) const

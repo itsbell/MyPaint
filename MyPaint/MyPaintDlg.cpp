@@ -20,6 +20,7 @@
 #include "UI/Clipboard.h"
 #include "UI/ImageDialogs.h"
 #include "UI/ImageFile.h"
+#include "UI/ShareDialogs.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -40,8 +41,19 @@ enum StatusPart
     kPartSelection,
     kPartCanvasSize,
     kPartZoom,
+    kPartShare,
     kPartCount,
 };
+
+/** @brief 네트워크 스레드가 받은 일이 있다고 알리는 메시지 */
+constexpr UINT WM_APP_NET = WM_APP + 1;
+
+/** @brief 공유가 끝났다는 안내를 (네트워크 처리가 끝난 뒤) 보여 주는 메시지 */
+constexpr UINT WM_APP_SHARE_NOTICE = WM_APP + 2;
+
+/** @brief 방장이 미리보기와 커서를 보내는 주기 (약 30fps) */
+constexpr UINT_PTR kShareTimer = 1;
+constexpr UINT kShareIntervalMs = 33;
 
 CString SizeText(CSize size)
 {
@@ -78,6 +90,13 @@ BEGIN_MESSAGE_MAP(CMyPaintDlg, CDialog)
     ON_COMMAND(ID_VIEW_ZOOM_IN, &CMyPaintDlg::OnViewZoomIn)
     ON_COMMAND(ID_VIEW_ZOOM_OUT, &CMyPaintDlg::OnViewZoomOut)
     ON_COMMAND(ID_VIEW_ZOOM_100, &CMyPaintDlg::OnViewZoom100)
+    ON_COMMAND(ID_SHARE_START, &CMyPaintDlg::OnShareStart)
+    ON_COMMAND(ID_SHARE_JOIN, &CMyPaintDlg::OnShareJoin)
+    ON_COMMAND(ID_SHARE_STOP, &CMyPaintDlg::OnShareStop)
+    ON_COMMAND(ID_SHARE_CHAT, &CMyPaintDlg::OnShareChatToggle)
+    ON_WM_TIMER()
+    ON_MESSAGE(WM_APP_NET, &CMyPaintDlg::OnNetMessage)
+    ON_MESSAGE(WM_APP_SHARE_NOTICE, &CMyPaintDlg::OnShareNotice)
 END_MESSAGE_MAP()
 
 CMyPaintDlg::CMyPaintDlg(CWnd* pParent) : CDialog(IDD_MYPAINT_DIALOG, pParent)
@@ -122,6 +141,18 @@ BOOL CMyPaintDlg::OnInitDialog()
     m_toolPanel.SetObserver(this);
     m_canvas.Create(this, IDC_CANVAS);
     m_canvas.SetObserver(this);
+    m_sharePanel.Create(this, IDC_SHAREPANEL);
+    m_sharePanel.SetInputEnabled(false);
+    m_sharePanel.SetSendHandler([this](const std::wstring& text) {
+        if (m_shareMode == ShareMode::Hosting && m_shareHost)
+        {
+            m_shareHost->SendChat(text);
+        }
+        else if (m_shareMode == ShareMode::Viewing && m_shareViewer)
+        {
+            m_shareViewer->SendChat(text);
+        }
+    });
 
     m_canvas.SetTool(m_tools[static_cast<size_t>(m_currentTool)].get(), &m_toolSettings, this);
     m_toolPanel.SetCurrentTool(m_currentTool);
@@ -161,6 +192,15 @@ BOOL CMyPaintDlg::PreTranslateMessage(MSG* pMsg)
 {
     if (pMsg->message >= WM_KEYFIRST && pMsg->message <= WM_KEYLAST)
     {
+        // 채팅 입력 중에는 Enter로 보내고, Ctrl+C/V 같은 키는 입력 칸이 쓰도록 단축키를 건너뜁니다.
+        if (m_sharePanelVisible && m_sharePanel.HandleKey(pMsg))
+        {
+            return TRUE;
+        }
+        if (m_sharePanelVisible && m_sharePanel.HasFocusInside())
+        {
+            return CDialog::PreTranslateMessage(pMsg);
+        }
         if (m_hAccel != nullptr && ::TranslateAccelerator(m_hWnd, m_hAccel, pMsg))
         {
             return TRUE;
@@ -181,6 +221,14 @@ BOOL CMyPaintDlg::PreTranslateMessage(MSG* pMsg)
 
 void CMyPaintDlg::OnClose()
 {
+    if (m_shareMode == ShareMode::Hosting)
+    {
+        if (AfxMessageBox(L"그림을 공유하는 중입니다. 공유를 끝내고 닫으시겠습니까?", MB_YESNO | MB_ICONQUESTION) != IDYES)
+        {
+            return;
+        }
+        StopHosting();
+    }
     CommitTool();
     if (ConfirmSaveChanges())
     {
@@ -190,6 +238,18 @@ void CMyPaintDlg::OnClose()
 
 void CMyPaintDlg::OnDestroy()
 {
+    KillTimer(kShareTimer);
+    // 공유 개체는 문서를 참조하므로 문서보다 먼저 정리합니다.
+    if (m_shareHost)
+    {
+        m_shareHost->Stop();
+        m_shareHost.reset();
+    }
+    if (m_shareViewer)
+    {
+        m_shareViewer->Stop();
+        m_shareViewer.reset();
+    }
     m_document.RemoveListener(this);
     CDialog::OnDestroy();
 }
@@ -228,9 +288,9 @@ void CMyPaintDlg::LayoutControls()
     CRect statusRect;
     m_statusBar.GetWindowRect(&statusRect);
 
-    // 좌표, 선택 크기, 캔버스 크기는 고정 폭이고 배율 칸이 남는 폭을 씁니다.
+    // 좌표, 선택 크기, 캔버스 크기, 배율은 고정 폭이고 공유 상태 칸이 남는 폭을 씁니다.
     const int partWidth = ScaleForDpi(160);
-    int edges[kPartCount] = {partWidth, partWidth * 2, partWidth * 3, -1};
+    int edges[kPartCount] = {partWidth, partWidth * 2, partWidth * 3, partWidth * 3 + ScaleForDpi(80), -1};
     m_statusBar.SetParts(kPartCount, edges);
 
     const int panelHeight = m_toolPanel.PreferredHeight();
@@ -239,6 +299,13 @@ void CMyPaintDlg::LayoutControls()
     CRect canvasRect = client;
     canvasRect.top = panelHeight;
     canvasRect.bottom -= statusRect.Height();
+    if (m_sharePanelVisible && m_sharePanel.GetSafeHwnd() != nullptr)
+    {
+        // 오른쪽에 참가자/채팅 창
+        const int width = (std::min)(m_sharePanel.PreferredWidth(), canvasRect.Width() / 2);
+        m_sharePanel.MoveWindow(canvasRect.right - width, canvasRect.top, width, canvasRect.Height());
+        canvasRect.right -= width;
+    }
     m_canvas.MoveWindow(canvasRect);
 }
 
@@ -269,6 +336,25 @@ void CMyPaintDlg::OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu)
     enable(ID_IMAGE_CROP, hasSelection);
     enable(ID_EDIT_PASTE,
            Clipboard::HasImage() || (textEditing && ::IsClipboardFormatAvailable(CF_UNICODETEXT)));
+
+    // 공유 메뉴
+    enable(ID_SHARE_START, m_shareMode != ShareMode::Hosting);
+    enable(ID_SHARE_JOIN, m_shareMode != ShareMode::Hosting);
+    enable(ID_SHARE_STOP, m_shareMode == ShareMode::Hosting || m_shareMode == ShareMode::Viewing);
+    pPopupMenu->CheckMenuItem(ID_SHARE_CHAT, MF_BYCOMMAND | (m_sharePanelVisible ? MF_CHECKED : MF_UNCHECKED));
+
+    // 보는 중에는 그림을 바꾸는 메뉴를 모두 막습니다.
+    if (IsViewOnly())
+    {
+        for (int i = 0; i < pPopupMenu->GetMenuItemCount(); ++i)
+        {
+            const UINT id = pPopupMenu->GetMenuItemID(i);
+            if (id != 0 && id != static_cast<UINT>(-1) && !IsCommandAllowedWhileViewing(id))
+            {
+                enable(id, false);
+            }
+        }
+    }
 }
 
 void CMyPaintDlg::OnDropFiles(HDROP hDropInfo)
@@ -282,7 +368,7 @@ void CMyPaintDlg::OnDropFiles(HDROP hDropInfo)
     }
     ::DragFinish(hDropInfo);
 
-    if (!path.IsEmpty())
+    if (!path.IsEmpty() && LeaveViewForDocumentChange())
     {
         CommitTool();
         if (ConfirmSaveChanges())
@@ -300,7 +386,20 @@ void CMyPaintDlg::UpdateTitle()
 {
     const CString name = m_filePath.IsEmpty() ? CString(L"제목 없음") : CString(::PathFindFileNameW(m_filePath));
     CString title;
-    title.Format(L"%s%s - MyPaint", m_document.IsModified() ? L"*" : L"", name.GetString());
+    switch (m_shareMode)
+    {
+    case ShareMode::Viewing:
+        title = m_viewRoom.empty() ? CString(L"연결 중... - MyPaint")
+                                   : CString((m_viewRoom + L" (보는 중) - MyPaint").c_str());
+        break;
+    case ShareMode::ViewEnded:
+        title = (m_viewRoom.empty() ? L"공유" : m_viewRoom.c_str());
+        title += L" (공유 끝남) - MyPaint";
+        break;
+    default:
+        title.Format(L"%s%s - MyPaint", m_document.IsModified() ? L"*" : L"", name.GetString());
+        break;
+    }
     if (title != m_title)
     {
         m_title = title;
@@ -319,6 +418,7 @@ void CMyPaintDlg::UpdateStatusBar()
     CString text;
     text.Format(L"%d%%", static_cast<int>(std::lround(m_canvas.Zoom() * 100.0)));
     m_statusBar.SetText(text, kPartZoom, 0);
+    m_statusBar.SetText(ShareStatusText(), kPartShare, 0);
     UpdateSelectionStatus();
 }
 
@@ -356,6 +456,18 @@ void CMyPaintDlg::OnCanvasCursor(bool inside, CPoint docPoint)
     }
     m_statusBar.SetText(text, kPartCursor, 0);
     UpdateSelectionStatus();
+    if (m_shareMode == ShareMode::Hosting && m_shareHost)
+    {
+        m_shareHost->SetCursor(inside, docPoint);
+    }
+}
+
+void CMyPaintDlg::OnCanvasPreviewChanged()
+{
+    if (m_shareMode == ShareMode::Hosting && m_shareHost)
+    {
+        m_shareHost->MarkPreviewDirty();
+    }
 }
 
 void CMyPaintDlg::OnCanvasZoomChanged(double /*zoom*/)
@@ -626,6 +738,10 @@ bool CMyPaintDlg::SaveDocumentAs()
 
 void CMyPaintDlg::OnFileNew()
 {
+    if (!LeaveViewForDocumentChange())
+    {
+        return;
+    }
     CommitTool();
     if (ConfirmSaveChanges())
     {
@@ -639,6 +755,10 @@ void CMyPaintDlg::OnFileNew()
 
 void CMyPaintDlg::OnFileOpen()
 {
+    if (!LeaveViewForDocumentChange())
+    {
+        return;
+    }
     CommitTool();
     if (!ConfirmSaveChanges())
     {
@@ -860,4 +980,450 @@ void CMyPaintDlg::OnViewZoomOut()
 void CMyPaintDlg::OnViewZoom100()
 {
     m_canvas.SetZoom(1.0);
+}
+
+// ---------------------------------------------------------------------------
+// 실시간 공유
+// ---------------------------------------------------------------------------
+
+BOOL CMyPaintDlg::OnCommand(WPARAM wParam, LPARAM lParam)
+{
+    // 메뉴와 단축키(lParam == 0)로 온 명령만 거릅니다. 컨트롤 알림은 그대로 둡니다.
+    if (lParam == 0 && IsViewOnly() && !IsCommandAllowedWhileViewing(LOWORD(wParam)))
+    {
+        return TRUE;
+    }
+    return CDialog::OnCommand(wParam, lParam);
+}
+
+bool CMyPaintDlg::IsCommandAllowedWhileViewing(UINT id) const
+{
+    switch (id)
+    {
+    case IDOK:
+    case IDCANCEL:
+    case ID_APP_EXIT:
+    case ID_FILE_NEW:  // 공유에서 나갈지 물어본 뒤 실행
+    case ID_FILE_OPEN: // 공유에서 나갈지 물어본 뒤 실행
+    case ID_VIEW_ZOOM_IN:
+    case ID_VIEW_ZOOM_OUT:
+    case ID_VIEW_ZOOM_100:
+    case ID_SHARE_START:
+    case ID_SHARE_JOIN:
+    case ID_SHARE_STOP:
+    case ID_SHARE_CHAT:
+        return true;
+    case ID_FILE_SAVE:
+    case ID_FILE_SAVE_AS:
+        return m_shareMode == ShareMode::ViewEnded; // 공유가 끝난 뒤에는 마지막 그림을 저장할 수 있습니다.
+    default:
+        return false;
+    }
+}
+
+void CMyPaintDlg::EnterViewMode()
+{
+    CommitTool();
+    Selection().Discard();
+    m_remoteTool.Clear();
+    m_canvas.SetTool(&m_remoteTool, &m_toolSettings, this);
+    m_canvas.SetReadOnly(true);
+    m_toolPanel.SetReadOnly(true);
+    m_filePath.Empty();
+}
+
+void CMyPaintDlg::LeaveViewMode()
+{
+    m_remoteTool.Clear();
+    m_canvas.SetRemoteCursor(false, CPoint(), CString());
+    m_canvas.SetReadOnly(false);
+    m_toolPanel.SetReadOnly(false);
+    m_canvas.SetTool(m_tools[static_cast<size_t>(m_currentTool)].get(), &m_toolSettings, this);
+    m_shareMode = ShareMode::None;
+    m_viewRoom.clear();
+    m_viewHost.clear();
+    m_sharePanel.SetInputEnabled(false);
+    UpdateShareUi();
+}
+
+bool CMyPaintDlg::LeaveViewForDocumentChange()
+{
+    if (m_shareMode == ShareMode::Viewing)
+    {
+        if (AfxMessageBox(L"공유 화면을 보는 중입니다. 공유에서 나가시겠습니까?", MB_YESNO | MB_ICONQUESTION) != IDYES)
+        {
+            return false;
+        }
+        StopViewing();
+    }
+    if (m_shareMode == ShareMode::ViewEnded)
+    {
+        LeaveViewMode();
+    }
+    return true;
+}
+
+void CMyPaintDlg::ShowSharePanel(bool show)
+{
+    if (m_sharePanelVisible == show)
+    {
+        return;
+    }
+    m_sharePanelVisible = show;
+    m_sharePanel.ShowWindow(show ? SW_SHOW : SW_HIDE);
+    m_toolPanel.SetChatVisible(show);
+    LayoutControls();
+}
+
+CString CMyPaintDlg::ShareStatusText() const
+{
+    CString text;
+    switch (m_shareMode)
+    {
+    case ShareMode::Hosting:
+    {
+        const std::vector<std::wstring> addresses = Share::LocalAddresses();
+        text.Format(L"● 공유 중 · %s:%u · %d명 보는 중", addresses.empty() ? L"내 PC" : addresses.front().c_str(),
+                    m_sharePort, (std::max)(0, m_participantCount - 1));
+        break;
+    }
+    case ShareMode::Viewing:
+        if (m_viewHost.empty())
+        {
+            text = L"● 연결 중...";
+        }
+        else
+        {
+            text.Format(L"● %s 님의 화면을 보는 중", m_viewHost.c_str());
+        }
+        break;
+    case ShareMode::ViewEnded:
+        text = L"공유가 끝났습니다 (보기 전용, 다른 이름으로 저장 가능)";
+        break;
+    default:
+        break;
+    }
+    return text;
+}
+
+void CMyPaintDlg::UpdateShareUi()
+{
+    PanelShareState state = PanelShareState::Off;
+    if (m_shareMode == ShareMode::Hosting)
+    {
+        state = PanelShareState::Hosting;
+    }
+    else if (m_shareMode == ShareMode::Viewing)
+    {
+        state = PanelShareState::Viewing;
+    }
+    m_toolPanel.SetShareState(state);
+    UpdateTitle();
+    UpdateStatusBar();
+}
+
+void CMyPaintDlg::OnShareStart()
+{
+    if (m_shareMode == ShareMode::Hosting)
+    {
+        return;
+    }
+    if (m_shareMode == ShareMode::Viewing)
+    {
+        if (AfxMessageBox(L"공유 화면을 보는 중입니다. 공유에서 나가고 내 그림을 공유하시겠습니까?",
+                          MB_YESNO | MB_ICONQUESTION) != IDYES)
+        {
+            return;
+        }
+        StopViewing();
+    }
+    if (m_shareMode == ShareMode::ViewEnded)
+    {
+        LeaveViewMode();
+    }
+
+    CShareStartDlg dialog(this);
+    dialog.m_name = m_shareName;
+    dialog.m_room = m_shareRoom;
+    if (m_sharePort != 0)
+    {
+        dialog.m_port = m_sharePort;
+    }
+    if (dialog.DoModal() != IDOK)
+    {
+        return;
+    }
+
+    CommitTool();
+    m_shareHost = std::make_unique<ShareHost>(m_document, *this);
+    m_shareName = dialog.m_name;
+    m_shareRoom = dialog.m_room;
+    m_sharePort = dialog.m_port;
+    m_participantCount = 1;
+    m_sharePanel.Clear();
+    m_shareMode = ShareMode::Hosting; // Start 안에서 참가자 목록 알림이 오므로 먼저 바꿉니다.
+    std::wstring error;
+    if (!m_shareHost->Start(m_shareName, m_shareRoom, m_sharePort, m_hWnd, WM_APP_NET, error))
+    {
+        m_shareMode = ShareMode::None;
+        m_shareHost.reset();
+        AfxMessageBox(error.c_str(), MB_ICONERROR);
+        UpdateShareUi();
+        return;
+    }
+    SetTimer(kShareTimer, kShareIntervalMs, nullptr);
+    m_sharePanel.SetInputEnabled(true);
+    CString notice;
+    notice.Format(L"'%s' 공유를 시작했습니다. (포트 %u)", m_shareRoom.c_str(), m_sharePort);
+    m_sharePanel.AppendChat(std::wstring(), notice.GetString(), true);
+    ShowSharePanel(true);
+    UpdateShareUi();
+    m_canvas.SetFocus();
+}
+
+void CMyPaintDlg::OnShareJoin()
+{
+    if (m_shareMode == ShareMode::Hosting)
+    {
+        return;
+    }
+    if (m_shareMode == ShareMode::Viewing)
+    {
+        if (AfxMessageBox(L"지금 보는 공유에서 나가고 다른 방에 참가하시겠습니까?", MB_YESNO | MB_ICONQUESTION) != IDYES)
+        {
+            return;
+        }
+        StopViewing();
+    }
+    if (m_shareMode == ShareMode::None)
+    {
+        // 참가하면 지금 그림이 방장의 그림으로 바뀌므로 먼저 저장할지 묻습니다.
+        CommitTool();
+        if (!ConfirmSaveChanges())
+        {
+            return;
+        }
+    }
+
+    CShareJoinDlg dialog(this);
+    dialog.m_name = m_shareName;
+    dialog.m_address = m_joinAddress;
+    if (m_joinPort != 0)
+    {
+        dialog.m_port = m_joinPort;
+    }
+    if (dialog.DoModal() != IDOK)
+    {
+        return;
+    }
+    m_shareName = dialog.m_name;
+    m_joinAddress = dialog.m_address;
+    m_joinPort = dialog.m_port;
+
+    if (m_shareMode != ShareMode::ViewEnded)
+    {
+        EnterViewMode();
+    }
+    m_remoteTool.Clear();
+    m_canvas.InvalidateToolPreview();
+    m_canvas.SetRemoteCursor(false, CPoint(), CString());
+    m_shareMode = ShareMode::Viewing;
+    m_viewRoom.clear();
+    m_viewHost.clear();
+    m_participantCount = 0;
+    m_sharePanel.Clear();
+    m_sharePanel.SetInputEnabled(false);
+    CString notice;
+    notice.Format(L"%s:%u 에 연결하는 중...", m_joinAddress.c_str(), m_joinPort);
+    m_sharePanel.AppendChat(std::wstring(), notice.GetString(), true);
+    ShowSharePanel(true);
+    UpdateShareUi();
+
+    m_shareViewer = std::make_unique<ShareViewer>(m_document, *this);
+    m_shareViewer->Start(m_joinAddress, m_joinPort, m_shareName, m_hWnd, WM_APP_NET);
+}
+
+void CMyPaintDlg::OnShareStop()
+{
+    if (m_shareMode == ShareMode::Hosting)
+    {
+        StopHosting();
+    }
+    else if (m_shareMode == ShareMode::Viewing)
+    {
+        StopViewing();
+    }
+}
+
+void CMyPaintDlg::StopHosting()
+{
+    KillTimer(kShareTimer);
+    if (m_shareHost)
+    {
+        m_shareHost->Stop();
+    }
+    m_shareMode = ShareMode::None;
+    m_participantCount = 0;
+    m_sharePanel.SetInputEnabled(false);
+    m_sharePanel.AppendChat(std::wstring(), L"공유를 끝냈습니다.", true);
+    UpdateShareUi();
+}
+
+void CMyPaintDlg::StopViewing()
+{
+    const bool joined = m_shareViewer && m_shareViewer->IsJoined();
+    if (m_shareViewer)
+    {
+        m_shareViewer->Stop();
+    }
+    if (joined)
+    {
+        // 들어가 있었으면 마지막 그림을 보기 전용으로 남깁니다.
+        m_shareMode = ShareMode::ViewEnded;
+        m_remoteTool.Clear();
+        m_canvas.InvalidateToolPreview();
+        m_canvas.SetRemoteCursor(false, CPoint(), CString());
+        m_sharePanel.SetInputEnabled(false);
+        m_sharePanel.AppendChat(std::wstring(), L"공유에서 나왔습니다.", true);
+        UpdateShareUi();
+    }
+    else
+    {
+        // 연결하기 전이면 원래 그림 그대로 평소 상태로 돌아갑니다.
+        m_sharePanel.AppendChat(std::wstring(), L"연결을 취소했습니다.", true);
+        LeaveViewMode();
+    }
+}
+
+void CMyPaintDlg::OnShareChatToggle()
+{
+    ShowSharePanel(!m_sharePanelVisible);
+    if (m_sharePanelVisible)
+    {
+        m_sharePanel.FocusInput();
+    }
+    else
+    {
+        m_canvas.SetFocus();
+    }
+}
+
+void CMyPaintDlg::OnTimer(UINT_PTR nIDEvent)
+{
+    if (nIDEvent == kShareTimer)
+    {
+        if (m_shareMode == ShareMode::Hosting && m_shareHost)
+        {
+            m_shareHost->Tick(m_tools[static_cast<size_t>(m_currentTool)].get());
+        }
+        return;
+    }
+    CDialog::OnTimer(nIDEvent);
+}
+
+LRESULT CMyPaintDlg::OnNetMessage(WPARAM /*wParam*/, LPARAM /*lParam*/)
+{
+    if (m_shareMode == ShareMode::Hosting && m_shareHost)
+    {
+        m_shareHost->OnNetMessage();
+    }
+    else if (m_shareMode == ShareMode::Viewing && m_shareViewer)
+    {
+        m_shareViewer->OnNetMessage();
+    }
+    return 0;
+}
+
+LRESULT CMyPaintDlg::OnShareNotice(WPARAM /*wParam*/, LPARAM /*lParam*/)
+{
+    if (!m_pendingNotice.IsEmpty())
+    {
+        const CString notice = m_pendingNotice;
+        m_pendingNotice.Empty();
+        AfxMessageBox(notice, MB_ICONINFORMATION);
+    }
+    return 0;
+}
+
+void CMyPaintDlg::OnShareParticipants(const std::vector<std::wstring>& names)
+{
+    m_participantCount = static_cast<int>(names.size());
+    m_sharePanel.SetParticipants(names, m_shareName);
+    UpdateStatusBar();
+}
+
+void CMyPaintDlg::OnShareChat(const std::wstring& sender, const std::wstring& text, bool notice)
+{
+    m_sharePanel.AppendChat(sender, text, notice);
+}
+
+void CMyPaintDlg::OnViewerJoined(const std::wstring& room, const std::wstring& host, const std::wstring& myName)
+{
+    m_viewRoom = room;
+    m_viewHost = host;
+    m_shareName = myName; // 이름이 겹치면 방장이 "준호 (2)"처럼 바꿔 줍니다.
+    m_sharePanel.SetInputEnabled(true);
+    CString notice;
+    notice.Format(L"'%s' 방에 들어왔습니다. (%s 님의 그림)", room.c_str(), host.c_str());
+    m_sharePanel.AppendChat(std::wstring(), notice.GetString(), true);
+    UpdateShareUi();
+}
+
+void CMyPaintDlg::OnViewerPreview(std::unique_ptr<Command> preview, const CRect& overlay)
+{
+    m_remoteTool.SetPreview(std::move(preview), overlay);
+    m_canvas.InvalidateToolPreview();
+}
+
+void CMyPaintDlg::OnViewerCursor(bool visible, CPoint docPoint)
+{
+    m_canvas.SetRemoteCursor(visible, docPoint, CString(m_viewHost.c_str()));
+}
+
+void CMyPaintDlg::OnShareEnded(ShareEndReason reason, const std::wstring& detail)
+{
+    // 네트워크 메시지를 처리하는 중이므로 안내 대화 상자는 나중에(OnShareNotice) 띄웁니다.
+    const bool joined = !m_viewHost.empty();
+    CString notice;
+    switch (reason)
+    {
+    case ShareEndReason::HostEnded:
+        notice = L"방장이 공유를 끝냈습니다.\n마지막 그림은 그대로 남아 있으며 [다른 이름으로 저장]으로 저장할 수 있습니다.";
+        break;
+    case ShareEndReason::ConnectFailed:
+        notice = L"방에 연결할 수 없습니다. 주소와 포트를 확인하세요.";
+        break;
+    case ShareEndReason::Rejected:
+        notice = detail.empty() ? CString(L"방장이 참가를 거절했습니다.") : CString(detail.c_str());
+        break;
+    default:
+        notice = L"방장과의 연결이 끊겼습니다.";
+        if (!detail.empty())
+        {
+            notice += L"\n";
+            notice += detail.c_str();
+        }
+        if (joined)
+        {
+            notice += L"\n마지막 그림은 그대로 남아 있으며 [다른 이름으로 저장]으로 저장할 수 있습니다.";
+        }
+        break;
+    }
+
+    m_sharePanel.AppendChat(std::wstring(), joined ? L"공유가 끝났습니다." : L"참가하지 못했습니다.", true);
+    if (joined)
+    {
+        m_shareMode = ShareMode::ViewEnded;
+        m_remoteTool.Clear();
+        m_canvas.InvalidateToolPreview();
+        m_canvas.SetRemoteCursor(false, CPoint(), CString());
+        m_sharePanel.SetInputEnabled(false);
+        UpdateShareUi();
+    }
+    else
+    {
+        LeaveViewMode();
+    }
+    m_pendingNotice = notice;
+    PostMessage(WM_APP_SHARE_NOTICE);
 }

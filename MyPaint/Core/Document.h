@@ -28,6 +28,13 @@ public:
 
     /** @brief 새 명령이 적용되었습니다. (실행 취소/다시 실행은 포함하지 않음) */
     virtual void OnCommandApplied(const Command& /*command*/) {}
+
+    /**
+     * @brief 명령 없이 픽셀이 바뀌었습니다. (실행 취소, 다시 실행, 새 문서, 파일 열기)
+     * @param dirty 바뀐 영역 (문서 좌표)
+     * @param whole 이미지 전체(크기 포함)가 바뀌었는지
+     */
+    virtual void OnDocumentRestored(const CRect& /*dirty*/, bool /*whole*/) {}
 };
 
 /**
@@ -51,6 +58,11 @@ public:
     /** @brief 명령을 적용하고 기록합니다. */
     void Apply(std::unique_ptr<Command> command);
 
+    /**
+     * @brief 명령을 기록 없이 적용합니다. (공유 화면을 보는 쪽: 실행 취소할 일이 없으므로 백업하지 않음)
+     */
+    void ApplyUnrecorded(const Command& command);
+
     bool CanUndo() const { return m_history.CanUndo(); }
     bool CanRedo() const { return m_history.CanRedo(); }
     bool Undo();
@@ -68,6 +80,7 @@ public:
 private:
     void NotifyChanged(const CRect& dirty);
     void NotifyReset();
+    void NotifyRestored(const CRect& dirty, bool whole);
 
     Surface m_surface;
     History m_history;

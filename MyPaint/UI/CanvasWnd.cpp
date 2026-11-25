@@ -241,6 +241,88 @@ void CCanvasWnd::InvalidatePreview()
     {
         InvalidateDoc(m_tool->TakePreviewDirty());
     }
+    if (m_observer != nullptr)
+    {
+        m_observer->OnCanvasPreviewChanged();
+    }
+}
+
+void CCanvasWnd::SetReadOnly(bool readOnly)
+{
+    if (m_readOnly != readOnly)
+    {
+        if (readOnly)
+        {
+            EndResize(false);
+        }
+        m_readOnly = readOnly;
+        Invalidate(FALSE);
+    }
+}
+
+CRect CCanvasWnd::RemoteCursorRect() const
+{
+    // 화살표(약 12×19)와 오른쪽 아래 이름표를 넉넉히 덮는 영역
+    const CPoint p(DocToClientX(m_remoteCursor.x + 0.5), DocToClientY(m_remoteCursor.y + 0.5));
+    return CRect(p.x - 2, p.y - 2, p.x + 180, p.y + 44);
+}
+
+void CCanvasWnd::SetRemoteCursor(bool visible, CPoint docPoint, const CString& label)
+{
+    if (visible == m_remoteCursorVisible && docPoint == m_remoteCursor && label == m_remoteLabel)
+    {
+        return;
+    }
+    if (GetSafeHwnd() != nullptr && m_remoteCursorVisible)
+    {
+        InvalidateRect(RemoteCursorRect(), FALSE);
+    }
+    m_remoteCursorVisible = visible;
+    m_remoteCursor = docPoint;
+    m_remoteLabel = label;
+    if (GetSafeHwnd() != nullptr && m_remoteCursorVisible)
+    {
+        InvalidateRect(RemoteCursorRect(), FALSE);
+    }
+}
+
+void CCanvasWnd::DrawRemoteCursor(CDC& dc)
+{
+    if (!m_remoteCursorVisible)
+    {
+        return;
+    }
+    constexpr COLORREF kCursorColor = RGB(220, 38, 38);
+    const CPoint p(DocToClientX(m_remoteCursor.x + 0.5), DocToClientY(m_remoteCursor.y + 0.5));
+
+    // 화살표 모양 (흰 테두리로 어느 배경에서도 보이게)
+    const POINT arrow[] = {{p.x, p.y},           {p.x, p.y + 17},      {p.x + 4, p.y + 13},
+                           {p.x + 7, p.y + 19},  {p.x + 10, p.y + 18}, {p.x + 7, p.y + 12},
+                           {p.x + 12, p.y + 12}};
+    CBrush fill(kCursorColor);
+    CPen outline(PS_SOLID, 1, RGB(255, 255, 255));
+    CBrush* oldBrush = dc.SelectObject(&fill);
+    CPen* oldPen = dc.SelectObject(&outline);
+    dc.Polygon(arrow, static_cast<int>(std::size(arrow)));
+
+    if (!m_remoteLabel.IsEmpty())
+    {
+        CFont* font = GetParent() != nullptr ? GetParent()->GetFont() : nullptr;
+        CFont* oldFont = font != nullptr ? dc.SelectObject(font) : nullptr;
+        const CSize text = dc.GetTextExtent(m_remoteLabel);
+        CRect label(p.x + 12, p.y + 18, p.x + 12 + text.cx + 10, p.y + 18 + text.cy + 4);
+        dc.FillSolidRect(label, kCursorColor);
+        dc.SetTextColor(RGB(255, 255, 255));
+        const int oldMode = dc.SetBkMode(TRANSPARENT);
+        dc.DrawText(m_remoteLabel, label, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        dc.SetBkMode(oldMode);
+        if (oldFont != nullptr)
+        {
+            dc.SelectObject(oldFont);
+        }
+    }
+    dc.SelectObject(oldPen);
+    dc.SelectObject(oldBrush);
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +379,7 @@ void CCanvasWnd::OnPaint()
 
     DrawOverlay(mem);
     DrawResizeHandles(mem);
+    DrawRemoteCursor(mem);
 
     dc.BitBlt(clip.left, clip.top, clip.Width(), clip.Height(), &mem, clip.left, clip.top, SRCCOPY);
     mem.SelectObject(oldBitmap);
@@ -371,6 +454,10 @@ CRect CCanvasWnd::HandleRect(ResizeHandle handle) const
 
 CCanvasWnd::ResizeHandle CCanvasWnd::HitHandle(CPoint client) const
 {
+    if (m_readOnly)
+    {
+        return ResizeHandle::None;
+    }
     for (const ResizeHandle handle : {ResizeHandle::Corner, ResizeHandle::Right, ResizeHandle::Bottom})
     {
         CRect r = HandleRect(handle);
@@ -385,7 +472,7 @@ CCanvasWnd::ResizeHandle CCanvasWnd::HitHandle(CPoint client) const
 
 void CCanvasWnd::DrawResizeHandles(CDC& dc)
 {
-    if (m_document == nullptr)
+    if (m_document == nullptr || m_readOnly)
     {
         return;
     }

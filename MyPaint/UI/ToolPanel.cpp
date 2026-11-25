@@ -9,6 +9,8 @@
 
 #include "Resource.h"
 
+#pragma comment(lib, "msimg32.lib") // AlphaBlend
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -42,6 +44,17 @@ constexpr wchar_t kGlyphCopy[] = {static_cast<wchar_t>(0xE8C8), 0};
 constexpr wchar_t kGlyphCrop[] = {static_cast<wchar_t>(0xE7A8), 0};
 constexpr wchar_t kGlyphResize[] = {static_cast<wchar_t>(0xE740), 0};
 constexpr wchar_t kGlyphRotate[] = {static_cast<wchar_t>(0xE7AD), 0};
+constexpr wchar_t kGlyphShare[] = {static_cast<wchar_t>(0xE72D), 0};
+constexpr wchar_t kGlyphView[] = {static_cast<wchar_t>(0xE7B3), 0};
+constexpr wchar_t kGlyphChat[] = {static_cast<wchar_t>(0xE8BD), 0};
+
+// 공유 버튼 상태 색
+constexpr COLORREF kHostingFill = RGB(220, 242, 224);
+constexpr COLORREF kHostingBorder = RGB(76, 160, 96);
+constexpr COLORREF kHostingText = RGB(24, 110, 48);
+constexpr COLORREF kViewingFill = RGB(219, 234, 252);
+constexpr COLORREF kViewingBorder = RGB(78, 140, 214);
+constexpr COLORREF kViewingText = RGB(22, 86, 160);
 
 /** @brief 기본 팔레트 (위 줄 10색, 아래 줄 10색) */
 constexpr COLORREF kPalette[] = {
@@ -318,6 +331,14 @@ void CToolPanel::Layout()
         x += Scale(52);
         endGroup(L"색");
     }
+
+    // 공유: 공유 시작/참가/끝내기, 채팅 창
+    m_shareGroupLeft = x - Scale(8);
+    add(ItemKind::Share, 0, CRect(x, bigTop, x + Scale(64), bigBottom), L"실시간 공유", L"공유");
+    x += Scale(66);
+    add(ItemKind::Chat, 0, CRect(x, bigTop, x + Scale(48), bigBottom), L"참가자와 채팅 창 보이기/숨기기", L"채팅");
+    x += Scale(48);
+    endGroup(L"공유");
     m_contentWidth = x;
 
     // 툴팁은 항목 사각형마다 하나씩 다시 등록합니다.
@@ -399,6 +420,21 @@ void CToolPanel::OnPaint()
     }
     dc.SelectObject(oldFont);
 
+    if (m_readOnly)
+    {
+        // 보기 전용: 공유 그룹을 뺀 나머지를 패널 배경색으로 반쯤 덮어 흐리게 보이게 합니다.
+        CDC wash;
+        wash.CreateCompatibleDC(&dc);
+        CBitmap pixel;
+        pixel.CreateCompatibleBitmap(&dc, 1, 1);
+        CBitmap* oldPixel = wash.SelectObject(&pixel);
+        wash.SetPixelV(0, 0, kPanelBack);
+        BLENDFUNCTION blend{AC_SRC_OVER, 0, 180, 0};
+        ::AlphaBlend(dc.GetSafeHdc(), 0, 0, m_shareGroupLeft, client.Height() - 1, wash.GetSafeHdc(), 0, 0, 1, 1,
+                     blend);
+        wash.SelectObject(oldPixel);
+    }
+
     paintDc.BitBlt(0, 0, client.Width(), client.Height(), &dc, 0, 0, SRCCOPY);
     dc.SelectObject(oldBitmap);
 }
@@ -414,13 +450,102 @@ bool CToolPanel::IsSelected(const Item& item) const
                static_cast<int>(m_settings->shapeKind) == item.value;
     case ItemKind::ColorSlot:
         return m_settings != nullptr && m_settings->activeColorSlot == item.value;
+    case ItemKind::Chat:
+        return m_chatVisible;
     default:
         return false;
     }
 }
 
+void CToolPanel::SetReadOnly(bool readOnly)
+{
+    if (m_readOnly != readOnly)
+    {
+        m_readOnly = readOnly;
+        m_hover = -1;
+        if (GetSafeHwnd() != nullptr)
+        {
+            Invalidate(FALSE);
+        }
+    }
+}
+
+void CToolPanel::SetShareState(PanelShareState state)
+{
+    if (m_shareState != state)
+    {
+        m_shareState = state;
+        if (GetSafeHwnd() != nullptr)
+        {
+            Invalidate(FALSE);
+        }
+    }
+}
+
+void CToolPanel::SetChatVisible(bool visible)
+{
+    if (m_chatVisible != visible)
+    {
+        m_chatVisible = visible;
+        if (GetSafeHwnd() != nullptr)
+        {
+            Invalidate(FALSE);
+        }
+    }
+}
+
+void CToolPanel::DrawShareButton(CDC& dc, const CRect& rect, bool hover)
+{
+    const wchar_t* glyph = kGlyphShare;
+    const wchar_t* label = L"공유  ▾";
+    COLORREF fill = kPanelBack;
+    COLORREF border = kPanelBack;
+    COLORREF text = kText;
+    switch (m_shareState)
+    {
+    case PanelShareState::Hosting:
+        label = L"공유 중  ▾";
+        fill = kHostingFill;
+        border = kHostingBorder;
+        text = kHostingText;
+        break;
+    case PanelShareState::Viewing:
+        glyph = kGlyphView;
+        label = L"보는 중  ▾";
+        fill = kViewingFill;
+        border = kViewingBorder;
+        text = kViewingText;
+        break;
+    default:
+        if (hover)
+        {
+            fill = kHoverFill;
+            border = kHoverBorder;
+        }
+        break;
+    }
+    if (fill != kPanelBack || border != kPanelBack)
+    {
+        CBrush brush(fill);
+        CPen pen(PS_SOLID, 1, border);
+        CBrush* oldBrush = dc.SelectObject(&brush);
+        CPen* oldPen = dc.SelectObject(&pen);
+        dc.Rectangle(rect);
+        dc.SelectObject(oldPen);
+        dc.SelectObject(oldBrush);
+    }
+    dc.SetTextColor(text);
+    DrawBigButton(dc, rect, glyph, label);
+    dc.SetTextColor(kText);
+}
+
 void CToolPanel::DrawItem(CDC& dc, const Item& item, bool hover)
 {
+    if (item.kind == ItemKind::Share)
+    {
+        DrawShareButton(dc, item.rect, hover);
+        return;
+    }
     const bool selected = IsSelected(item);
     const bool isSwatch = item.kind == ItemKind::Palette || item.kind == ItemKind::Custom;
 
@@ -554,6 +679,11 @@ void CToolPanel::DrawItem(CDC& dc, const Item& item, bool hover)
     case ItemKind::EditColors:
         DrawBigButton(dc, r, kGlyphPalette, item.label);
         break;
+    case ItemKind::Chat:
+        DrawBigButton(dc, r, kGlyphChat, item.label);
+        break;
+    case ItemKind::Share:
+        break; // 위에서 그림
     }
 }
 
@@ -636,7 +766,12 @@ int CToolPanel::HitTest(CPoint point) const
 {
     for (size_t i = 0; i < m_items.size(); ++i)
     {
-        if (m_items[i].rect.PtInRect(point))
+        const Item& item = m_items[i];
+        if (m_readOnly && item.kind != ItemKind::Share && item.kind != ItemKind::Chat)
+        {
+            continue; // 보기 전용일 때는 공유 그룹만 누를 수 있습니다.
+        }
+        if (item.rect.PtInRect(point))
         {
             return static_cast<int>(i);
         }
@@ -820,6 +955,31 @@ void CToolPanel::Activate(const Item& item, MouseButton button)
     case ItemKind::EditColors:
         m_observer->OnPanelEditColors();
         return;
+    case ItemKind::Chat:
+        m_observer->OnPanelCommand(ID_SHARE_CHAT);
+        return;
+    case ItemKind::Share:
+    {
+        // 상태에 따라 고를 수 있는 일이 다릅니다.
+        std::vector<CString> choices;
+        std::vector<UINT> commands;
+        if (m_shareState == PanelShareState::Off)
+        {
+            choices = {L"공유 시작...", L"공유 참가..."};
+            commands = {ID_SHARE_START, ID_SHARE_JOIN};
+        }
+        else
+        {
+            choices = {m_shareState == PanelShareState::Hosting ? L"공유 끝내기" : L"공유에서 나가기"};
+            commands = {ID_SHARE_STOP};
+        }
+        const int choice = ShowChoiceMenu(item, choices, -1);
+        if (choice >= 0)
+        {
+            m_observer->OnPanelCommand(commands[static_cast<size_t>(choice)]);
+        }
+        return;
+    }
     }
 
     Invalidate(FALSE);

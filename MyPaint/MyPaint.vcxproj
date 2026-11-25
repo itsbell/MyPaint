@@ -128,7 +128,11 @@
     <ClInclude Include="Core\ShapeCommand.h" />
     <ClInclude Include="Core\StrokeCommand.h" />
     <ClInclude Include="Core\Surface.h" />
+    <ClInclude Include="Net\NetEngine.h" />
+    <ClInclude Include="Net\Protocol.h" />
+    <ClInclude Include="Net\ShareSession.h" />
     <ClInclude Include="Tools\FreehandTool.h" />
+    <ClInclude Include="Tools\RemoteViewTool.h" />
     <ClInclude Include="Tools\SelectTool.h" />
     <ClInclude Include="Tools\ShapeTool.h" />
     <ClInclude Include="Tools\SimpleTools.h" />
@@ -138,6 +142,8 @@
     <ClInclude Include="UI\Clipboard.h" />
     <ClInclude Include="UI\ImageDialogs.h" />
     <ClInclude Include="UI\ImageFile.h" />
+    <ClInclude Include="UI\ShareDialogs.h" />
+    <ClInclude Include="UI\SharePanel.h" />
     <ClInclude Include="UI\ToolPanel.h" />
   </ItemGroup>
   <ItemGroup>
@@ -152,7 +158,11 @@
     <ClCompile Include="Core\ShapeCommand.cpp" />
     <ClCompile Include="Core\StrokeCommand.cpp" />
     <ClCompile Include="Core\Surface.cpp" />
+    <ClCompile Include="Net\NetEngine.cpp" />
+    <ClCompile Include="Net\Protocol.cpp" />
+    <ClCompile Include="Net\ShareSession.cpp" />
     <ClCompile Include="Tools\FreehandTool.cpp" />
+    <ClCompile Include="Tools\RemoteViewTool.cpp" />
     <ClCompile Include="Tools\SelectTool.cpp" />
     <ClCompile Include="Tools\ShapeTool.cpp" />
     <ClCompile Include="Tools\SimpleTools.cpp" />
@@ -162,6 +172,8 @@
     <ClCompile Include="UI\Clipboard.cpp" />
     <ClCompile Include="UI\ImageDialogs.cpp" />
     <ClCompile Include="UI\ImageFile.cpp" />
+    <ClCompile Include="UI\ShareDialogs.cpp" />
+    <ClCompile Include="UI\SharePanel.cpp" />
     <ClCompile Include="UI\ToolPanel.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

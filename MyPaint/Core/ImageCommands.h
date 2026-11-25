@@ -40,6 +40,12 @@ public:
 
     static std::unique_ptr<PatchCommand> Read(ByteReader& reader);
 
+    const CRect& ClearRect() const { return m_clearRect; }
+    COLORREF ClearColor() const { return m_clearColor; }
+    CPoint Dest() const { return m_dest; }
+    CSize PatchSize() const { return m_size; }
+    const PixelData& Pixels() const { return m_pixels; }
+
 private:
     CRect m_clearRect;
     COLORREF m_clearColor;

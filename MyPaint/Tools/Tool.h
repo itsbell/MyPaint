@@ -6,6 +6,7 @@
  */
 
 #include <array>
+#include <memory>
 #include <string>
 
 #include "Core/ShapeCommand.h"
@@ -165,6 +166,14 @@ public:
 
     /** @brief 문서 사본(surface) 위에 미리보기를 그립니다. 기본은 PreviewCommand()를 실행합니다. */
     virtual void DrawPreview(Surface& surface) const;
+
+    /**
+     * @brief 공유 화면을 보는 사람에게 보낼 미리보기 명령을 만듭니다.
+     *
+     * PreviewCommand()가 없는 도구(텍스트처럼 DrawPreview로 직접 그리는 도구)만 재정의합니다.
+     * nullptr이면 PreviewCommand()를 그대로 보냅니다.
+     */
+    virtual std::unique_ptr<Command> MakeSharedPreview(const Surface& /*document*/) const { return nullptr; }
 
     /** @brief 지난번 호출 뒤 미리보기가 바뀐 영역(문서 좌표)을 돌려주고 비웁니다. */
     virtual CRect TakePreviewDirty() { return CRect(); }

@@ -45,6 +45,7 @@ public:
     void Commit(ToolContext& context) override;
     bool IsActive() const override { return m_dragging; }
     void DrawPreview(Surface& surface) const override;
+    std::unique_ptr<Command> MakeSharedPreview(const Surface& document) const override;
     CRect TakePreviewDirty() override;
     CRect OverlayRect() const override { return (m_editing || m_dragging) ? m_box : CRect(); }
     HCURSOR CursorAt(CPoint point) const override;
@@ -60,6 +61,9 @@ public:
     void InsertText(ToolContext& context, const std::wstring& text);
 
 private:
+    /** @brief 상자 영역의 문서 픽셀 위에 text를 그린 결과 픽셀 명령 (그릴 곳이 없으면 nullptr) */
+    std::unique_ptr<Command> Rasterize(const Surface& document, const std::wstring& text) const;
+
     /** @brief 글자가 상자 아래로 넘치면 상자를 늘립니다. */
     void FitHeight();
 

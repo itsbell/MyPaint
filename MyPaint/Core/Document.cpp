@@ -24,6 +24,7 @@ void Document::Reset(Surface&& surface)
     m_history.Clear();
     m_savedId = m_history.CurrentId();
     NotifyReset();
+    NotifyRestored(m_surface.Bounds(), true);
 }
 
 void Document::Apply(std::unique_ptr<Command> command)
@@ -81,10 +82,12 @@ bool Document::Undo()
         restored.WriteBlock(entry.before);
         m_surface = std::move(restored);
         NotifyReset();
+        NotifyRestored(m_surface.Bounds(), true);
         return true;
     }
     m_surface.WriteBlock(entry.before);
     NotifyChanged(entry.before.rect);
+    NotifyRestored(entry.before.rect, false);
     return true;
 }
 
@@ -104,7 +107,29 @@ bool Document::Redo()
     {
         NotifyChanged(entry.before.rect);
     }
+    const bool whole = entry.command->ChangesSize();
+    NotifyRestored(whole ? m_surface.Bounds() : entry.before.rect, whole);
     return true;
+}
+
+void Document::ApplyUnrecorded(const Command& command)
+{
+    if (!m_surface.IsValid())
+    {
+        return;
+    }
+    CRect dirty = command.ComputeBounds(m_surface);
+    command.Execute(m_surface);
+    if (command.ChangesSize())
+    {
+        NotifyReset();
+        return;
+    }
+    dirty &= m_surface.Bounds();
+    if (!dirty.IsRectEmpty())
+    {
+        NotifyChanged(dirty);
+    }
 }
 
 void Document::AddListener(IDocumentListener* listener)
@@ -125,6 +150,14 @@ void Document::NotifyChanged(const CRect& dirty)
     for (IDocumentListener* listener : m_listeners)
     {
         listener->OnDocumentChanged(dirty);
+    }
+}
+
+void Document::NotifyRestored(const CRect& dirty, bool whole)
+{
+    for (IDocumentListener* listener : m_listeners)
+    {
+        listener->OnDocumentRestored(dirty, whole);
     }
 }
 

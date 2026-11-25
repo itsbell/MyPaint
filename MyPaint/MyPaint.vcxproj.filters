@@ -13,6 +13,9 @@
     <Filter Include="UI">
       <UniqueIdentifier>{6a1c3e52-1f0e-4c39-9a52-3b0f6b1d0a04}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Net">
+      <UniqueIdentifier>{6a1c3e52-1f0e-4c39-9a52-3b0f6b1d0a06}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Resources">
       <UniqueIdentifier>{6a1c3e52-1f0e-4c39-9a52-3b0f6b1d0a05}</UniqueIdentifier>
     </Filter>
@@ -34,7 +37,11 @@
     <ClInclude Include="Core\ShapeCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\StrokeCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\Surface.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Net\NetEngine.h"><Filter>Net</Filter></ClInclude>
+    <ClInclude Include="Net\Protocol.h"><Filter>Net</Filter></ClInclude>
+    <ClInclude Include="Net\ShareSession.h"><Filter>Net</Filter></ClInclude>
     <ClInclude Include="Tools\FreehandTool.h"><Filter>Tools</Filter></ClInclude>
+    <ClInclude Include="Tools\RemoteViewTool.h"><Filter>Tools</Filter></ClInclude>
     <ClInclude Include="Tools\SelectTool.h"><Filter>Tools</Filter></ClInclude>
     <ClInclude Include="Tools\ShapeTool.h"><Filter>Tools</Filter></ClInclude>
     <ClInclude Include="Tools\SimpleTools.h"><Filter>Tools</Filter></ClInclude>
@@ -44,6 +51,8 @@
     <ClInclude Include="UI\Clipboard.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\ImageDialogs.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\ImageFile.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\ShareDialogs.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\SharePanel.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\ToolPanel.h"><Filter>UI</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -59,7 +68,11 @@
     <ClCompile Include="Core\ShapeCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\StrokeCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\Surface.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Net\NetEngine.cpp"><Filter>Net</Filter></ClCompile>
+    <ClCompile Include="Net\Protocol.cpp"><Filter>Net</Filter></ClCompile>
+    <ClCompile Include="Net\ShareSession.cpp"><Filter>Net</Filter></ClCompile>
     <ClCompile Include="Tools\FreehandTool.cpp"><Filter>Tools</Filter></ClCompile>
+    <ClCompile Include="Tools\RemoteViewTool.cpp"><Filter>Tools</Filter></ClCompile>
     <ClCompile Include="Tools\SelectTool.cpp"><Filter>Tools</Filter></ClCompile>
     <ClCompile Include="Tools\ShapeTool.cpp"><Filter>Tools</Filter></ClCompile>
     <ClCompile Include="Tools\SimpleTools.cpp"><Filter>Tools</Filter></ClCompile>
@@ -69,6 +82,8 @@
     <ClCompile Include="UI\Clipboard.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="UI\ImageDialogs.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="UI\ImageFile.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\ShareDialogs.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\SharePanel.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="UI\ToolPanel.cpp"><Filter>UI</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>

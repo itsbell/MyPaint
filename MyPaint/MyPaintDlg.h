@@ -7,10 +7,15 @@
 
 #include <array>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "Core/Document.h"
+#include "Net/ShareSession.h"
+#include "Tools/RemoteViewTool.h"
 #include "Tools/Tool.h"
 #include "UI/CanvasWnd.h"
+#include "UI/SharePanel.h"
 #include "UI/ToolPanel.h"
 
 class SelectTool;
@@ -25,7 +30,8 @@ class CMyPaintDlg : public CDialog,
                     public IDocumentListener,
                     public ICanvasObserver,
                     public IToolHost,
-                    public IToolPanelObserver
+                    public IToolPanelObserver,
+                    public IShareObserver
 {
 public:
     /**
@@ -48,6 +54,15 @@ public:
     void OnCanvasZoomChanged(double zoom) override;
     void OnCanvasResizing(bool active, CSize newSize) override;
     void OnCanvasResizeRequested(CSize newSize) override;
+    void OnCanvasPreviewChanged() override;
+
+    // IShareObserver
+    void OnShareParticipants(const std::vector<std::wstring>& names) override;
+    void OnShareChat(const std::wstring& sender, const std::wstring& text, bool notice) override;
+    void OnViewerJoined(const std::wstring& room, const std::wstring& host, const std::wstring& myName) override;
+    void OnViewerPreview(std::unique_ptr<Command> preview, const CRect& overlay) override;
+    void OnViewerCursor(bool visible, CPoint docPoint) override;
+    void OnShareEnded(ShareEndReason reason, const std::wstring& detail) override;
 
     // IToolHost
     void SetToolColor(MouseButton button, COLORREF color) override;
@@ -65,6 +80,9 @@ protected:
     void DoDataExchange(CDataExchange* pDX) override;
     BOOL OnInitDialog() override;
     BOOL PreTranslateMessage(MSG* pMsg) override;
+
+    /** @brief 공유 화면을 보는 중에는 그림을 바꾸는 명령(메뉴, 단축키)을 막습니다. */
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override;
 
     /** @brief Enter 키로 창이 닫히지 않도록 막습니다. */
     void OnOK() override {}
@@ -106,6 +124,15 @@ protected:
     afx_msg void OnViewZoomIn();
     afx_msg void OnViewZoomOut();
     afx_msg void OnViewZoom100();
+
+    // 공유
+    afx_msg void OnShareStart();
+    afx_msg void OnShareJoin();
+    afx_msg void OnShareStop();
+    afx_msg void OnShareChatToggle();
+    afx_msg void OnTimer(UINT_PTR nIDEvent);
+    afx_msg LRESULT OnNetMessage(WPARAM wParam, LPARAM lParam);
+    afx_msg LRESULT OnShareNotice(WPARAM wParam, LPARAM lParam);
     DECLARE_MESSAGE_MAP()
 
 private:
@@ -151,6 +178,58 @@ private:
 
     /** @brief 96 DPI 기준 값을 현재 DPI로 바꿉니다. */
     int ScaleForDpi(int value) const;
+
+    // ---- 공유 ----
+
+    /** @brief 공유 상태 */
+    enum class ShareMode
+    {
+        None,      ///< 공유하지 않음
+        Hosting,   ///< 내 그림을 공유하는 중
+        Viewing,   ///< 다른 사람의 그림을 보는 중 (연결 중 포함)
+        ViewEnded, ///< 보던 공유가 끝남: 마지막 그림을 보기 전용으로 남김 (저장은 가능)
+    };
+
+    bool IsViewOnly() const { return m_shareMode == ShareMode::Viewing || m_shareMode == ShareMode::ViewEnded; }
+
+    /** @brief 보는 중에 허용하는 명령인지 */
+    bool IsCommandAllowedWhileViewing(UINT id) const;
+
+    /** @brief 보기 전용으로 바꿉니다. (캔버스에 원격 보기 도구를 끼움) */
+    void EnterViewMode();
+
+    /** @brief 보기 전용을 끝내고 평소 편집으로 돌아갑니다. */
+    void LeaveViewMode();
+
+    /** @brief 공유를 끝냅니다. (방장: 끝 인사, 보는 쪽: 연결 끊기) */
+    void StopHosting();
+    void StopViewing();
+
+    /**
+     * @brief 새 그림/열기처럼 문서를 바꾸기 전에 보기 상태를 정리합니다.
+     * @return 계속해도 되면 true (보는 중이면 나갈지 물어봄)
+     */
+    bool LeaveViewForDocumentChange();
+
+    void ShowSharePanel(bool show);
+    void UpdateShareUi();
+    CString ShareStatusText() const;
+
+    ShareMode m_shareMode = ShareMode::None;
+    std::unique_ptr<ShareHost> m_shareHost;
+    std::unique_ptr<ShareViewer> m_shareViewer;
+    RemoteViewTool m_remoteTool;
+    CSharePanel m_sharePanel;
+    bool m_sharePanelVisible = false;
+    std::wstring m_shareName;      ///< 내 닉네임 (공유 중에 정해진 이름)
+    std::wstring m_shareRoom;      ///< 방장: 방 이름
+    uint16_t m_sharePort = 0;      ///< 방장: 포트
+    std::wstring m_viewRoom;       ///< 보는 쪽: 방 이름
+    std::wstring m_viewHost;       ///< 보는 쪽: 방장 닉네임
+    std::wstring m_joinAddress;    ///< 마지막으로 참가한 주소 (다음 참가 대화 상자 기본값)
+    uint16_t m_joinPort = 0;
+    int m_participantCount = 0;    ///< 방장 포함 인원
+    CString m_pendingNotice;       ///< 공유가 끝난 뒤 보여 줄 메시지 (네트워크 처리 중에 대화 상자를 띄우지 않도록)
 
     HICON m_hIcon = nullptr;   ///< 창 아이콘
     HACCEL m_hAccel = nullptr; ///< 단축키 표
