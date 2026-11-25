@@ -18,6 +18,11 @@ enum class CommandType : uint16_t
     Stroke = 1,
     Fill = 2,
     Shape = 3,
+    Patch = 4,
+    Invert = 5,
+    Transform = 6,
+    ResizeSkew = 7,
+    CanvasSize = 8,
 };
 
 /**
@@ -43,6 +48,13 @@ public:
      * 채우기처럼 표면 내용에 따라 영역이 정해지는 명령만 재정의합니다.
      */
     virtual CRect ComputeBounds(const Surface& /*surface*/) const { return Bounds(); }
+
+    /**
+     * @brief 캔버스 크기를 바꿀 수 있는 명령인지 (회전, 크기 조정, 자르기 등)
+     *
+     * true이면 Document가 실행 전에 이미지 전체를 백업하고, Execute는 표면을 새로 만들어 바꿔 끼웁니다.
+     */
+    virtual bool ChangesSize() const { return false; }
 
     /** @brief 표면에 명령을 적용합니다. DC에 클리핑이 걸려 있으면 그 안에만 그려도 됩니다. */
     virtual void Execute(Surface& surface) const = 0;

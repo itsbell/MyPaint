@@ -8,6 +8,10 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <string>
+
+#include <imm.h>
+#pragma comment(lib, "imm32.lib")
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -44,6 +48,11 @@ BEGIN_MESSAGE_MAP(CCanvasWnd, CWnd)
     ON_WM_MOUSELEAVE()
     ON_WM_KEYDOWN()
     ON_WM_KEYUP()
+    ON_WM_CHAR()
+    ON_WM_GETDLGCODE()
+    ON_MESSAGE(WM_IME_STARTCOMPOSITION, &CCanvasWnd::OnImeStartComposition)
+    ON_MESSAGE(WM_IME_COMPOSITION, &CCanvasWnd::OnImeComposition)
+    ON_MESSAGE(WM_IME_ENDCOMPOSITION, &CCanvasWnd::OnImeEndComposition)
     ON_WM_CAPTURECHANGED()
     ON_WM_SETCURSOR()
     ON_WM_DESTROY()
@@ -80,7 +89,7 @@ void CCanvasWnd::SetDocument(Document* document)
 
 void CCanvasWnd::SetTool(Tool* tool, const ToolSettings* settings, IToolHost* host)
 {
-    CancelTool();
+    CommitTool();
     m_tool = tool;
     m_settings = settings;
     m_host = host;
@@ -106,6 +115,45 @@ void CCanvasWnd::CancelTool()
             ReleaseCapture();
         }
     }
+}
+
+void CCanvasWnd::CommitTool()
+{
+    CancelTool();
+    if (m_tool != nullptr && m_document != nullptr && m_settings != nullptr && m_host != nullptr)
+    {
+        ToolContext context = MakeContext(false);
+        m_tool->Commit(context);
+        InvalidatePreview();
+    }
+}
+
+void CCanvasWnd::HandleEscape()
+{
+    if (m_dragging)
+    {
+        CancelTool();
+    }
+    else
+    {
+        CommitTool();
+    }
+}
+
+void CCanvasWnd::NotifySettingsChanged()
+{
+    if (m_tool != nullptr && m_document != nullptr && m_settings != nullptr && m_host != nullptr)
+    {
+        ToolContext context = MakeContext(false);
+        m_tool->OnSettingsChanged(context);
+        InvalidatePreview();
+    }
+}
+
+CPoint CCanvasWnd::VisibleDocOrigin() const
+{
+    const CPoint p = ClientToDoc(CPoint(0, 0));
+    return CPoint((std::max)(0L, p.x), (std::max)(0L, p.y));
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +283,8 @@ void CCanvasWnd::OnPaint()
         }
     }
 
+    DrawOverlay(mem);
+
     dc.BitBlt(clip.left, clip.top, clip.Width(), clip.Height(), &mem, clip.left, clip.top, SRCCOPY);
     mem.SelectObject(oldBitmap);
 }
@@ -243,19 +293,44 @@ void CCanvasWnd::UpdateComposite(const CRect& docRect)
 {
     m_composite.CopyFrom(m_document->GetSurface(), docRect);
 
-    if (m_tool == nullptr || !m_tool->IsActive())
+    if (m_tool == nullptr)
     {
         return;
     }
-    if (const Command* preview = m_tool->PreviewCommand())
+    // 확정될 때와 같은 코드로 그려서 미리보기와 결과가 픽셀 단위로 같게 합니다.
+    // (선택 영역/텍스트처럼 드래그가 끝난 뒤에도 남는 미리보기가 있으므로 IsActive와 관계없이 그립니다.)
+    HDC dc = m_composite.DC();
+    const int saved = ::SaveDC(dc);
+    ::IntersectClipRect(dc, docRect.left, docRect.top, docRect.right, docRect.bottom);
+    m_tool->DrawPreview(m_composite);
+    ::RestoreDC(dc, saved);
+}
+
+void CCanvasWnd::DrawOverlay(CDC& dc)
+{
+    if (m_tool == nullptr)
     {
-        // 확정될 때와 같은 코드로 그려서 미리보기와 결과가 픽셀 단위로 같게 합니다.
-        HDC dc = m_composite.DC();
-        const int saved = ::SaveDC(dc);
-        ::IntersectClipRect(dc, docRect.left, docRect.top, docRect.right, docRect.bottom);
-        preview->Execute(m_composite);
-        ::RestoreDC(dc, saved);
+        return;
     }
+    const CRect docRect = m_tool->OverlayRect();
+    if (docRect.IsRectEmpty())
+    {
+        return;
+    }
+    // 영역 바로 바깥에 흰 실선 + 검은 점선을 겹쳐 어떤 배경에서도 보이게 합니다.
+    CRect r = DocToClient(docRect);
+    r.InflateRect(1, 1);
+    CBrush* oldBrush = static_cast<CBrush*>(dc.SelectStockObject(NULL_BRUSH));
+    CPen white(PS_SOLID, 1, RGB(255, 255, 255));
+    CPen dotted(PS_DOT, 1, RGB(0, 0, 0));
+    CPen* oldPen = dc.SelectObject(&white);
+    dc.Rectangle(r);
+    dc.SelectObject(&dotted);
+    const int oldMode = dc.SetBkMode(TRANSPARENT);
+    dc.Rectangle(r);
+    dc.SetBkMode(oldMode);
+    dc.SelectObject(oldPen);
+    dc.SelectObject(oldBrush);
 }
 
 // ---------------------------------------------------------------------------
@@ -577,6 +652,86 @@ void CCanvasWnd::OnKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
     CWnd::OnKeyUp(nChar, nRepCnt, nFlags);
 }
 
+UINT CCanvasWnd::OnGetDlgCode()
+{
+    // 대화 상자가 Enter, Tab 등을 가로채지 않고 캔버스로 보내게 합니다. (텍스트 입력)
+    return DLGC_WANTALLKEYS | DLGC_WANTCHARS;
+}
+
+void CCanvasWnd::OnChar(UINT nChar, UINT nRepCnt, UINT nFlags)
+{
+    if (m_tool != nullptr && m_tool->WantsTextInput() && m_document != nullptr)
+    {
+        ToolContext context = MakeContext(false);
+        m_tool->OnChar(context, static_cast<wchar_t>(nChar));
+        InvalidatePreview();
+        return;
+    }
+    CWnd::OnChar(nChar, nRepCnt, nFlags);
+}
+
+LRESULT CCanvasWnd::OnImeStartComposition(WPARAM /*wParam*/, LPARAM /*lParam*/)
+{
+    if (m_tool != nullptr && m_tool->WantsTextInput())
+    {
+        return 0; // 조합 중인 글자는 텍스트 상자 안에 직접 그리므로 IME 기본 창을 띄우지 않습니다.
+    }
+    return Default();
+}
+
+LRESULT CCanvasWnd::OnImeComposition(WPARAM /*wParam*/, LPARAM lParam)
+{
+    if (m_tool == nullptr || !m_tool->WantsTextInput() || m_document == nullptr)
+    {
+        return Default();
+    }
+
+    HIMC imc = ::ImmGetContext(m_hWnd);
+    if (imc == nullptr)
+    {
+        return Default();
+    }
+    auto readString = [imc](DWORD index) {
+        const LONG bytes = ::ImmGetCompositionStringW(imc, index, nullptr, 0);
+        std::wstring text(bytes > 0 ? static_cast<size_t>(bytes) / sizeof(wchar_t) : 0, L'\0');
+        if (bytes > 0)
+        {
+            ::ImmGetCompositionStringW(imc, index, text.data(), static_cast<DWORD>(bytes));
+        }
+        return text;
+    };
+
+    ToolContext context = MakeContext(false);
+    // 완성된 글자를 먼저 넣고, 이어서 조합 중인 글자를 갱신합니다. (한 메시지에 둘 다 올 수 있음)
+    if ((lParam & GCS_RESULTSTR) != 0)
+    {
+        for (const wchar_t ch : readString(GCS_RESULTSTR))
+        {
+            m_tool->OnChar(context, ch);
+        }
+        m_tool->OnComposition(context, std::wstring());
+    }
+    if ((lParam & GCS_COMPSTR) != 0)
+    {
+        m_tool->OnComposition(context, readString(GCS_COMPSTR));
+    }
+    ::ImmReleaseContext(m_hWnd, imc);
+    InvalidatePreview();
+    return 0; // 기본 처리를 하지 않으므로 WM_CHAR가 중복으로 오지 않습니다.
+}
+
+LRESULT CCanvasWnd::OnImeEndComposition(WPARAM /*wParam*/, LPARAM /*lParam*/)
+{
+    if (m_tool != nullptr && m_tool->WantsTextInput() && m_document != nullptr)
+    {
+        ToolContext context = MakeContext(false);
+        m_tool->OnComposition(context, std::wstring());
+        InvalidatePreview();
+        return 0;
+    }
+    return Default();
+}
+
 void CCanvasWnd::OnMouseLeave()
 {
     m_trackingLeave = false;
@@ -599,7 +754,10 @@ BOOL CCanvasWnd::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 {
     if (nHitTest == HTCLIENT && m_tool != nullptr)
     {
-        ::SetCursor(m_tool->Cursor());
+        CPoint point;
+        ::GetCursorPos(&point);
+        ScreenToClient(&point);
+        ::SetCursor(m_tool->CursorAt(ClientToDoc(point)));
         return TRUE;
     }
     return CWnd::OnSetCursor(pWnd, nHitTest, message);

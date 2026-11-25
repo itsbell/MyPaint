@@ -42,13 +42,28 @@ public:
     /** @brief 보여 줄 문서를 연결합니다. */
     void SetDocument(Document* document);
 
-    /** @brief 현재 도구, 설정, 도구가 부를 호스트를 연결합니다. 진행 중인 작업은 취소됩니다. */
+    /** @brief 현재 도구, 설정, 도구가 부를 호스트를 연결합니다. 이전 도구의 작업은 확정됩니다. */
     void SetTool(Tool* tool, const ToolSettings* settings, IToolHost* host);
 
     void SetObserver(ICanvasObserver* observer) { m_observer = observer; }
 
-    /** @brief 진행 중인 도구 작업을 취소합니다. */
+    /** @brief 진행 중인 드래그를 취소합니다. */
     void CancelTool();
+
+    /** @brief 드래그를 취소하고, 남아 있는 작업(선택 영역, 텍스트)을 문서에 확정합니다. */
+    void CommitTool();
+
+    /** @brief Esc: 드래그 중이면 취소, 아니면 남은 작업을 확정합니다. */
+    void HandleEscape();
+
+    /** @brief 도구 설정이 바뀌었음을 도구에 알리고 미리보기를 다시 그립니다. */
+    void NotifySettingsChanged();
+
+    /** @brief 도구 상태가 밖에서 바뀌었을 때(선택 영역 붙여넣기 등) 미리보기를 다시 그립니다. */
+    void InvalidateToolPreview() { InvalidatePreview(); }
+
+    /** @brief 화면에 보이는 영역의 왼쪽 위 문서 좌표 (0 이상) */
+    CPoint VisibleDocOrigin() const;
 
     double Zoom() const { return m_zoom; }
     /** @brief 한 단계 확대/축소합니다. anchor는 SetZoom과 같습니다. */
@@ -83,6 +98,11 @@ protected:
     afx_msg void OnMouseLeave();
     afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
     afx_msg void OnKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags);
+    afx_msg void OnChar(UINT nChar, UINT nRepCnt, UINT nFlags);
+    afx_msg UINT OnGetDlgCode();
+    afx_msg LRESULT OnImeStartComposition(WPARAM wParam, LPARAM lParam);
+    afx_msg LRESULT OnImeComposition(WPARAM wParam, LPARAM lParam);
+    afx_msg LRESULT OnImeEndComposition(WPARAM wParam, LPARAM lParam);
     afx_msg void OnCaptureChanged(CWnd* pWnd);
     afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);
     afx_msg void OnDestroy();
@@ -101,6 +121,9 @@ private:
 
     /** @brief 문서 영역을 합성 사본에 복사하고 미리보기를 얹습니다. */
     void UpdateComposite(const CRect& docRect);
+
+    /** @brief 선택 영역/텍스트 상자의 점선 테두리를 그립니다. (클라이언트 좌표 DC) */
+    void DrawOverlay(CDC& dc);
 
     /** @brief 클라이언트 좌표 → 문서 좌표 (픽셀 단위로 내림) */
     CPoint ClientToDoc(CPoint client) const;

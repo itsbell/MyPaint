@@ -90,6 +90,14 @@ public:
     /** @brief 같은 크기의 다른 표면에서 rect 영역을 복사해 옵니다. */
     void CopyFrom(const Surface& source, const CRect& rect);
 
+    /** @brief rect(표면 범위로 잘림)를 한 색으로 채웁니다. */
+    void FillRect(const CRect& rect, COLORREF color);
+
+    /**
+     * @brief width × height 픽셀 배열을 dest 위치에 씁니다. 표면 밖으로 나가는 부분은 버립니다.
+     */
+    void WritePixels(CPoint dest, int width, int height, const Pixel* pixels);
+
 private:
     HDC m_dc = nullptr;
     HBITMAP m_bitmap = nullptr;

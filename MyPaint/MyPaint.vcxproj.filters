@@ -29,14 +29,20 @@
     <ClInclude Include="Core\Document.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\FillCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\History.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\ImageCommands.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\ShapeCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\StrokeCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\Surface.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Tools\FreehandTool.h"><Filter>Tools</Filter></ClInclude>
+    <ClInclude Include="Tools\SelectTool.h"><Filter>Tools</Filter></ClInclude>
     <ClInclude Include="Tools\ShapeTool.h"><Filter>Tools</Filter></ClInclude>
     <ClInclude Include="Tools\SimpleTools.h"><Filter>Tools</Filter></ClInclude>
+    <ClInclude Include="Tools\TextTool.h"><Filter>Tools</Filter></ClInclude>
     <ClInclude Include="Tools\Tool.h"><Filter>Tools</Filter></ClInclude>
     <ClInclude Include="UI\CanvasWnd.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\Clipboard.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\ImageDialogs.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\ImageFile.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\ToolPanel.h"><Filter>UI</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -47,13 +53,20 @@
     <ClCompile Include="Core\Document.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\FillCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\History.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\ImageCommands.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\ShapeCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\StrokeCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\Surface.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Tools\FreehandTool.cpp"><Filter>Tools</Filter></ClCompile>
+    <ClCompile Include="Tools\SelectTool.cpp"><Filter>Tools</Filter></ClCompile>
     <ClCompile Include="Tools\ShapeTool.cpp"><Filter>Tools</Filter></ClCompile>
     <ClCompile Include="Tools\SimpleTools.cpp"><Filter>Tools</Filter></ClCompile>
+    <ClCompile Include="Tools\TextTool.cpp"><Filter>Tools</Filter></ClCompile>
+    <ClCompile Include="Tools\Tool.cpp"><Filter>Tools</Filter></ClCompile>
     <ClCompile Include="UI\CanvasWnd.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\Clipboard.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\ImageDialogs.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\ImageFile.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="UI\ToolPanel.cpp"><Filter>UI</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>

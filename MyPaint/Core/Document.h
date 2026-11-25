@@ -42,6 +42,9 @@ public:
     /** @brief 한 색으로 채운 새 문서를 만듭니다. 기록은 지워집니다. */
     bool New(int width, int height, COLORREF background = RGB(255, 255, 255));
 
+    /** @brief 주어진 표면(열어 온 파일 등)으로 문서를 바꿉니다. 기록은 지워집니다. */
+    void Reset(Surface&& surface);
+
     const Surface& GetSurface() const { return m_surface; }
     CSize Size() const { return m_surface.Size(); }
 

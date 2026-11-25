@@ -7,6 +7,8 @@
 
 #include <iterator>
 
+#include "Resource.h"
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -25,13 +27,21 @@ constexpr COLORREF kSelectedBorder = RGB(98, 162, 228);
 constexpr COLORREF kSwatchBorder = RGB(160, 160, 160);
 constexpr COLORREF kEmptySwatch = RGB(250, 250, 250);
 
-// Segoe MDL2 Assets 글리프 (Windows 10/11 기본 글꼴)
-constexpr const wchar_t* kGlyphPencil = L"";
-constexpr const wchar_t* kGlyphEraser = L"";
-constexpr const wchar_t* kGlyphPicker = L"";
-constexpr const wchar_t* kGlyphMagnifier = L"";
-constexpr const wchar_t* kGlyphBrush = L"";
-constexpr const wchar_t* kGlyphPalette = L"";
+// Segoe MDL2 Assets 글리프 (Windows 10/11 기본 글꼴). 코드 포인트로 적어 둡니다.
+constexpr wchar_t kGlyphPencil[] = {static_cast<wchar_t>(0xE70F), 0};
+constexpr wchar_t kGlyphEraser[] = {static_cast<wchar_t>(0xE75C), 0};
+constexpr wchar_t kGlyphPicker[] = {static_cast<wchar_t>(0xEF3C), 0};
+constexpr wchar_t kGlyphMagnifier[] = {static_cast<wchar_t>(0xE71E), 0};
+constexpr wchar_t kGlyphBrush[] = {static_cast<wchar_t>(0xEE56), 0};
+constexpr wchar_t kGlyphPalette[] = {static_cast<wchar_t>(0xE790), 0};
+constexpr wchar_t kGlyphText[] = {static_cast<wchar_t>(0xE8D2), 0};
+constexpr wchar_t kGlyphSelect[] = {static_cast<wchar_t>(0xE8B3), 0};
+constexpr wchar_t kGlyphPaste[] = {static_cast<wchar_t>(0xE77F), 0};
+constexpr wchar_t kGlyphCut[] = {static_cast<wchar_t>(0xE8C6), 0};
+constexpr wchar_t kGlyphCopy[] = {static_cast<wchar_t>(0xE8C8), 0};
+constexpr wchar_t kGlyphCrop[] = {static_cast<wchar_t>(0xE7A8), 0};
+constexpr wchar_t kGlyphResize[] = {static_cast<wchar_t>(0xE740), 0};
+constexpr wchar_t kGlyphRotate[] = {static_cast<wchar_t>(0xE7AD), 0};
 
 /** @brief 기본 팔레트 (위 줄 10색, 아래 줄 10색) */
 constexpr COLORREF kPalette[] = {
@@ -44,6 +54,34 @@ constexpr int kPaletteColumns = 10;
 
 /** @brief 패널 높이 (96 DPI 기준) */
 constexpr int kPanelHeight = 98;
+
+/** @brief 도형 그룹과 텍스트 그룹의 폭 (도구를 바꿔도 오른쪽 그룹이 움직이지 않게 같게 둡니다) */
+constexpr int kContextGroupWidth = 232;
+
+/** @brief 회전 메뉴 항목과 명령 */
+struct RotateChoice
+{
+    const wchar_t* label;
+    UINT command;
+};
+constexpr RotateChoice kRotateChoices[] = {
+    {L"오른쪽으로 90° 회전", ID_IMAGE_ROTATE_RIGHT}, {L"왼쪽으로 90° 회전", ID_IMAGE_ROTATE_LEFT},
+    {L"180° 회전", ID_IMAGE_ROTATE_180},            {L"좌우 대칭", ID_IMAGE_FLIP_H},
+    {L"상하 대칭", ID_IMAGE_FLIP_V},
+};
+
+const wchar_t* GlyphForCommand(UINT id)
+{
+    switch (id)
+    {
+    case ID_EDIT_PASTE: return kGlyphPaste;
+    case ID_EDIT_CUT: return kGlyphCut;
+    case ID_EDIT_COPY: return kGlyphCopy;
+    case ID_IMAGE_CROP: return kGlyphCrop;
+    case ID_IMAGE_RESIZE: return kGlyphResize;
+    default: return L"";
+    }
+}
 
 CString ColorTip(COLORREF color)
 {
@@ -78,9 +116,16 @@ BOOL CToolPanel::Create(CWnd* parent, UINT id)
 
 void CToolPanel::SetCurrentTool(ToolId tool)
 {
+    // 텍스트 도구일 때만 도형 그룹 자리에 텍스트 그룹이 나오므로 다시 배치합니다.
+    const bool relayout = (tool == ToolId::Text) != (m_currentTool == ToolId::Text);
     m_currentTool = tool;
     if (GetSafeHwnd() != nullptr)
     {
+        if (relayout)
+        {
+            m_hover = -1;
+            Layout();
+        }
         Invalidate(FALSE);
     }
 }
@@ -148,8 +193,8 @@ void CToolPanel::Layout()
     int x = Scale(8);
     int groupStart = x;
 
-    auto add = [this](ItemKind kind, int value, const CRect& rect, const CString& tip) {
-        m_items.push_back({kind, value, rect, tip});
+    auto add = [this](ItemKind kind, int value, const CRect& rect, const CString& tip, const CString& label = CString()) {
+        m_items.push_back({kind, value, rect, tip, label});
     };
     auto endGroup = [&](const wchar_t* label) {
         m_groups.push_back({label, CRect(groupStart, labelTop, x, labelBottom), x + Scale(8)});
@@ -157,7 +202,27 @@ void CToolPanel::Layout()
         groupStart = x;
     };
 
-    // 도구: 2줄 x 3칸 (텍스트 도구 자리는 다음 단계에서 채웁니다)
+    // 클립보드: 붙여넣기(큰 버튼), 잘라내기, 복사
+    add(ItemKind::Command, ID_EDIT_PASTE, CRect(x, bigTop, x + Scale(56), bigBottom), L"붙여넣기 (Ctrl+V)", L"붙여넣기");
+    x += Scale(58);
+    add(ItemKind::Command, ID_EDIT_CUT, CRect(x, Scale(12), x + Scale(80), Scale(36)), L"잘라내기 (Ctrl+X)", L"잘라내기");
+    add(ItemKind::Command, ID_EDIT_COPY, CRect(x, Scale(42), x + Scale(80), Scale(66)), L"복사 (Ctrl+C)", L"복사");
+    x += Scale(80);
+    endGroup(L"클립보드");
+
+    // 이미지: 선택(큰 버튼), 자르기, 크기 조정, 회전
+    add(ItemKind::Tool, static_cast<int>(ToolId::Select), CRect(x, bigTop, x + Scale(48), bigBottom),
+        L"선택 (Ctrl+A: 모두 선택)", L"선택");
+    x += Scale(50);
+    add(ItemKind::Command, ID_IMAGE_CROP, CRect(x, Scale(8), x + Scale(96), Scale(29)), L"선택 영역으로 자르기 (Ctrl+Shift+X)",
+        L"자르기");
+    add(ItemKind::Command, ID_IMAGE_RESIZE, CRect(x, Scale(30), x + Scale(96), Scale(51)),
+        L"크기 조정 및 기울이기 (Ctrl+W)", L"크기 조정");
+    add(ItemKind::RotateMenu, 0, CRect(x, Scale(52), x + Scale(96), Scale(73)), L"회전 / 대칭", L"회전  ▾");
+    x += Scale(96);
+    endGroup(L"이미지");
+
+    // 도구: 2줄 x 3칸
     {
         const int cell = Scale(28);
         const int size = Scale(26);
@@ -171,6 +236,7 @@ void CToolPanel::Layout()
         const Slot slots[] = {
             {ToolId::Pencil, 0, 0, L"연필"},
             {ToolId::Fill, 1, 0, L"채우기"},
+            {ToolId::Text, 2, 0, L"텍스트"},
             {ToolId::Eraser, 0, 1, L"지우개 (색 2로 지움)"},
             {ToolId::Picker, 1, 1, L"색 선택"},
             {ToolId::Magnifier, 2, 1, L"돋보기 (왼쪽: 확대, 오른쪽: 축소)"},
@@ -189,10 +255,21 @@ void CToolPanel::Layout()
     x += Scale(48);
     endGroup(L"브러시");
 
-    // 도형: 6열 격자 + 윤곽선/채우기
+    if (m_currentTool == ToolId::Text)
     {
+        // 텍스트: 글꼴, 배경
+        add(ItemKind::Font, 0, CRect(x, Scale(12), x + Scale(kContextGroupWidth), Scale(36)), L"글꼴 바꾸기");
+        add(ItemKind::TextBackground, 0, CRect(x, Scale(42), x + Scale(kContextGroupWidth), Scale(66)),
+            L"텍스트 배경 (불투명이면 색 2로 채움)");
+        x += Scale(kContextGroupWidth);
+        endGroup(L"텍스트");
+    }
+    else
+    {
+        // 도형: 6열 격자 + 윤곽선/채우기
         const int cell = Scale(22);
         constexpr int kColumns = 6;
+        const int start = x;
         for (int i = 0; i < static_cast<int>(ShapeKind::Count); ++i)
         {
             const CPoint topLeft(x + (i % kColumns) * cell, Scale(9) + (i / kColumns) * cell);
@@ -200,9 +277,10 @@ void CToolPanel::Layout()
                 ShapeKindName(static_cast<ShapeKind>(i)));
         }
         x += kColumns * cell + Scale(8);
-        add(ItemKind::Outline, 0, CRect(x, Scale(12), x + Scale(92), Scale(36)), L"도형 윤곽선");
-        add(ItemKind::Fill, 0, CRect(x, Scale(42), x + Scale(92), Scale(66)), L"도형 채우기 (색 2)");
-        x += Scale(92);
+        const int right = start + Scale(kContextGroupWidth);
+        add(ItemKind::Outline, 0, CRect(x, Scale(12), right, Scale(36)), L"도형 윤곽선");
+        add(ItemKind::Fill, 0, CRect(x, Scale(42), right, Scale(66)), L"도형 채우기 (색 2)");
+        x = right;
         endGroup(L"도형");
     }
 
@@ -213,9 +291,10 @@ void CToolPanel::Layout()
 
     // 색: 색 1, 색 2, 팔레트, 색 편집
     {
-        add(ItemKind::ColorSlot, 0, CRect(x, bigTop, x + Scale(48), bigBottom), L"색 1 (왼쪽 버튼으로 그릴 때)");
+        add(ItemKind::ColorSlot, 0, CRect(x, bigTop, x + Scale(48), bigBottom), L"색 1 (왼쪽 버튼, 텍스트 색)");
         x += Scale(50);
-        add(ItemKind::ColorSlot, 1, CRect(x, bigTop, x + Scale(48), bigBottom), L"색 2 (오른쪽 버튼, 지우개, 도형 채우기)");
+        add(ItemKind::ColorSlot, 1, CRect(x, bigTop, x + Scale(48), bigBottom),
+            L"색 2 (오른쪽 버튼, 지우개, 도형 채우기, 텍스트 배경)");
         x += Scale(56);
 
         const int cell = Scale(22);
@@ -231,7 +310,7 @@ void CToolPanel::Layout()
             add(ItemKind::Custom, i, CRect(topLeft, CSize(swatch, swatch)), L"사용자 지정 색");
         }
         x += kPaletteColumns * cell + Scale(6);
-        add(ItemKind::EditColors, 0, CRect(x, bigTop, x + Scale(52), bigBottom), L"색 편집");
+        add(ItemKind::EditColors, 0, CRect(x, bigTop, x + Scale(52), bigBottom), L"색 편집", L"색 편집");
         x += Scale(52);
         endGroup(L"색");
     }
@@ -362,14 +441,29 @@ void CToolPanel::DrawItem(CDC& dc, const Item& item, bool hover)
         {
         case ToolId::Pencil: DrawGlyph(dc, r, kGlyphPencil, m_glyphFont); break;
         case ToolId::Fill: DrawFillIcon(dc, r); break;
+        case ToolId::Text: DrawGlyph(dc, r, kGlyphText, m_glyphFont); break;
         case ToolId::Eraser: DrawGlyph(dc, r, kGlyphEraser, m_glyphFont); break;
         case ToolId::Picker: DrawGlyph(dc, r, kGlyphPicker, m_glyphFont); break;
         case ToolId::Magnifier: DrawGlyph(dc, r, kGlyphMagnifier, m_glyphFont); break;
         case ToolId::Brush: DrawGlyph(dc, r, kGlyphBrush, m_bigGlyphFont); break;
+        case ToolId::Select: DrawBigButton(dc, r, kGlyphSelect, item.label); break;
         default: break;
         }
         break;
     }
+    case ItemKind::Command:
+        if (item.value == ID_EDIT_PASTE)
+        {
+            DrawBigButton(dc, r, GlyphForCommand(ID_EDIT_PASTE), item.label);
+        }
+        else
+        {
+            DrawSmallButton(dc, r, GlyphForCommand(static_cast<UINT>(item.value)), item.label);
+        }
+        break;
+    case ItemKind::RotateMenu:
+        DrawSmallButton(dc, r, kGlyphRotate, item.label);
+        break;
     case ItemKind::Shape:
     {
         CRect icon = r;
@@ -386,8 +480,29 @@ void CToolPanel::DrawItem(CDC& dc, const Item& item, bool hover)
         const bool on = m_settings != nullptr &&
                         (item.kind == ItemKind::Outline ? m_settings->shapeOutline : m_settings->shapeFill);
         CString text;
-        text.Format(L"%s: %s  ▾", item.kind == ItemKind::Outline ? L"윤곽선" : L"채우기",
-                    on ? L"단색" : L"없음");
+        text.Format(L"%s: %s  ▾", item.kind == ItemKind::Outline ? L"윤곽선" : L"채우기", on ? L"단색" : L"없음");
+        r.DeflateRect(Scale(6), 0);
+        dc.DrawText(text, r, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        break;
+    }
+    case ItemKind::Font:
+    {
+        CString text;
+        if (m_settings != nullptr)
+        {
+            text.Format(L"글꼴: %s, %dpt%s%s%s", m_settings->textFace.c_str(), m_settings->textPointSize,
+                        m_settings->textBold ? L", 굵게" : L"", m_settings->textItalic ? L", 기울임" : L"",
+                        m_settings->textUnderline ? L", 밑줄" : L"");
+        }
+        r.DeflateRect(Scale(6), 0);
+        dc.DrawText(text, r, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+        break;
+    }
+    case ItemKind::TextBackground:
+    {
+        const bool opaque = m_settings != nullptr && m_settings->textOpaque;
+        CString text;
+        text.Format(L"배경: %s  ▾", opaque ? L"불투명" : L"투명");
         r.DeflateRect(Scale(6), 0);
         dc.DrawText(text, r, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         break;
@@ -433,13 +548,8 @@ void CToolPanel::DrawItem(CDC& dc, const Item& item, bool hover)
         break;
     }
     case ItemKind::EditColors:
-    {
-        CRect icon(r.left, r.top + Scale(4), r.right, r.top + Scale(38));
-        DrawGlyph(dc, icon, kGlyphPalette, m_bigGlyphFont);
-        CRect label(r.left, r.bottom - Scale(26), r.right, r.bottom - Scale(4));
-        dc.DrawText(L"색 편집", label, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+        DrawBigButton(dc, r, kGlyphPalette, item.label);
         break;
-    }
     }
 }
 
@@ -449,6 +559,22 @@ void CToolPanel::DrawGlyph(CDC& dc, const CRect& rect, const wchar_t* glyph, CFo
     CRect r = rect;
     dc.DrawText(glyph, 1, r, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     dc.SelectObject(oldFont);
+}
+
+void CToolPanel::DrawBigButton(CDC& dc, const CRect& rect, const wchar_t* glyph, const CString& label)
+{
+    CRect icon(rect.left, rect.top + Scale(4), rect.right, rect.top + Scale(38));
+    DrawGlyph(dc, icon, glyph, m_bigGlyphFont);
+    CRect text(rect.left, rect.bottom - Scale(26), rect.right, rect.bottom - Scale(4));
+    dc.DrawText(label, text, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+}
+
+void CToolPanel::DrawSmallButton(CDC& dc, const CRect& rect, const wchar_t* glyph, const CString& label)
+{
+    CRect icon(rect.left + Scale(2), rect.top, rect.left + Scale(24), rect.bottom);
+    DrawGlyph(dc, icon, glyph, m_glyphFont);
+    CRect text(icon.right + Scale(4), rect.top, rect.right, rect.bottom);
+    dc.DrawText(label, text, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
 }
 
 void CToolPanel::DrawFillIcon(CDC& dc, const CRect& rect)
@@ -548,7 +674,9 @@ void CToolPanel::OnLButtonDown(UINT /*nFlags*/, CPoint point)
     const int hit = HitTest(point);
     if (hit >= 0)
     {
-        Activate(m_items[static_cast<size_t>(hit)], MouseButton::Left);
+        // 항목 처리 중에 다시 배치될 수 있으므로(텍스트 도구 전환) 복사해 둡니다.
+        const Item item = m_items[static_cast<size_t>(hit)];
+        Activate(item, MouseButton::Left);
     }
 }
 
@@ -557,7 +685,8 @@ void CToolPanel::OnRButtonDown(UINT /*nFlags*/, CPoint point)
     const int hit = HitTest(point);
     if (hit >= 0)
     {
-        Activate(m_items[static_cast<size_t>(hit)], MouseButton::Right);
+        const Item item = m_items[static_cast<size_t>(hit)];
+        Activate(item, MouseButton::Right);
     }
 }
 
@@ -602,6 +731,36 @@ void CToolPanel::Activate(const Item& item, MouseButton button)
         m_settings->shapeKind = static_cast<ShapeKind>(item.value);
         m_observer->OnPanelToolSelected(ToolId::Shape);
         return;
+    case ItemKind::Command:
+        m_observer->OnPanelCommand(static_cast<UINT>(item.value));
+        return;
+    case ItemKind::RotateMenu:
+    {
+        std::vector<CString> choices;
+        for (const RotateChoice& c : kRotateChoices)
+        {
+            choices.push_back(c.label);
+        }
+        const int choice = ShowChoiceMenu(item, choices, -1);
+        if (choice >= 0)
+        {
+            m_observer->OnPanelCommand(kRotateChoices[choice].command);
+        }
+        return;
+    }
+    case ItemKind::Font:
+        m_observer->OnPanelEditFont();
+        return;
+    case ItemKind::TextBackground:
+    {
+        const int choice = ShowChoiceMenu(item, {L"투명", L"불투명"}, m_settings->textOpaque ? 1 : 0);
+        if (choice < 0)
+        {
+            return;
+        }
+        m_settings->textOpaque = choice == 1;
+        break;
+    }
     case ItemKind::Outline:
     case ItemKind::Fill:
     {

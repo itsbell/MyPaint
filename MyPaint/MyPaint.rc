@@ -82,6 +82,43 @@ FONT 9, "MS Shell Dlg", 0, 0, 0x1
 BEGIN
 END
 
+IDD_RESIZE DIALOGEX 0, 0, 200, 176
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "크기 조정 및 기울이기"
+FONT 9, "Malgun Gothic", 400, 0, 0x81
+BEGIN
+    GROUPBOX        "크기 조정",IDC_STATIC,7,7,186,86
+    LTEXT           "기준:",IDC_STATIC,16,22,30,8
+    CONTROL         "백분율",IDC_RESIZE_PERCENT,"Button",BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,52,21,50,10
+    CONTROL         "픽셀",IDC_RESIZE_PIXELS,"Button",BS_AUTORADIOBUTTON,108,21,50,10
+    LTEXT           "가로:",IDC_STATIC,16,40,30,8
+    EDITTEXT        IDC_RESIZE_WIDTH,52,38,60,13,ES_AUTOHSCROLL | ES_NUMBER | WS_GROUP
+    LTEXT           "세로:",IDC_STATIC,16,58,30,8
+    EDITTEXT        IDC_RESIZE_HEIGHT,52,56,60,13,ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "가로 세로 비율 유지",IDC_RESIZE_KEEP,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,16,76,120,10
+    GROUPBOX        "기울이기 (각도)",IDC_STATIC,7,98,186,52
+    LTEXT           "가로:",IDC_STATIC,16,114,30,8
+    EDITTEXT        IDC_SKEW_H,52,112,60,13,ES_AUTOHSCROLL
+    LTEXT           "세로:",IDC_STATIC,16,132,30,8
+    EDITTEXT        IDC_SKEW_V,52,130,60,13,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "확인",IDOK,88,156,50,14
+    PUSHBUTTON      "취소",IDCANCEL,143,156,50,14
+END
+
+IDD_PROPERTIES DIALOGEX 0, 0, 170, 82
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "이미지 속성"
+FONT 9, "Malgun Gothic", 400, 0, 0x81
+BEGIN
+    GROUPBOX        "캔버스 크기 (픽셀)",IDC_STATIC,7,7,156,50
+    LTEXT           "가로:",IDC_STATIC,16,22,30,8
+    EDITTEXT        IDC_PROP_WIDTH,52,20,60,13,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "세로:",IDC_STATIC,16,40,30,8
+    EDITTEXT        IDC_PROP_HEIGHT,52,38,60,13,ES_AUTOHSCROLL | ES_NUMBER
+    DEFPUSHBUTTON   "확인",IDOK,58,62,50,14
+    PUSHBUTTON      "취소",IDCANCEL,113,62,50,14
+END
+
 /////////////////////////////////////////////////////////////////////////////
 //
 // Menu
@@ -92,6 +129,9 @@ BEGIN
     POPUP "파일(&F)"
     BEGIN
         MENUITEM "새로 만들기(&N)\tCtrl+N",       ID_FILE_NEW
+        MENUITEM "열기(&O)...\tCtrl+O",           ID_FILE_OPEN
+        MENUITEM "저장(&S)\tCtrl+S",              ID_FILE_SAVE
+        MENUITEM "다른 이름으로 저장(&A)...\tF12", ID_FILE_SAVE_AS
         MENUITEM SEPARATOR
         MENUITEM "끝내기(&X)",                   ID_APP_EXIT
     END
@@ -99,6 +139,27 @@ BEGIN
     BEGIN
         MENUITEM "실행 취소(&U)\tCtrl+Z",         ID_EDIT_UNDO
         MENUITEM "다시 실행(&R)\tCtrl+Y",         ID_EDIT_REDO
+        MENUITEM SEPARATOR
+        MENUITEM "잘라내기(&T)\tCtrl+X",          ID_EDIT_CUT
+        MENUITEM "복사(&C)\tCtrl+C",              ID_EDIT_COPY
+        MENUITEM "붙여넣기(&P)\tCtrl+V",          ID_EDIT_PASTE
+        MENUITEM "삭제(&D)\tDel",                 ID_EDIT_CLEAR
+        MENUITEM SEPARATOR
+        MENUITEM "모두 선택(&A)\tCtrl+A",         ID_EDIT_SELECT_ALL
+    END
+    POPUP "이미지(&I)"
+    BEGIN
+        MENUITEM "자르기(&C)\tCtrl+Shift+X",      ID_IMAGE_CROP
+        MENUITEM "크기 조정 및 기울이기(&R)...\tCtrl+W", ID_IMAGE_RESIZE
+        MENUITEM "이미지 속성(&P)...\tCtrl+E",    ID_IMAGE_PROPERTIES
+        MENUITEM SEPARATOR
+        MENUITEM "오른쪽으로 90° 회전",           ID_IMAGE_ROTATE_RIGHT
+        MENUITEM "왼쪽으로 90° 회전",             ID_IMAGE_ROTATE_LEFT
+        MENUITEM "180° 회전",                     ID_IMAGE_ROTATE_180
+        MENUITEM "좌우 대칭",                     ID_IMAGE_FLIP_H
+        MENUITEM "상하 대칭",                     ID_IMAGE_FLIP_V
+        MENUITEM SEPARATOR
+        MENUITEM "색 반전(&I)\tCtrl+Shift+I",     ID_IMAGE_INVERT
     END
     POPUP "보기(&V)"
     BEGIN
@@ -116,8 +177,20 @@ END
 IDR_ACCELERATOR ACCELERATORS
 BEGIN
     "N",            ID_FILE_NEW,            VIRTKEY, CONTROL, NOINVERT
+    "O",            ID_FILE_OPEN,           VIRTKEY, CONTROL, NOINVERT
+    "S",            ID_FILE_SAVE,           VIRTKEY, CONTROL, NOINVERT
+    VK_F12,         ID_FILE_SAVE_AS,        VIRTKEY, NOINVERT
     "Z",            ID_EDIT_UNDO,           VIRTKEY, CONTROL, NOINVERT
     "Y",            ID_EDIT_REDO,           VIRTKEY, CONTROL, NOINVERT
+    "X",            ID_EDIT_CUT,            VIRTKEY, CONTROL, NOINVERT
+    "C",            ID_EDIT_COPY,           VIRTKEY, CONTROL, NOINVERT
+    "V",            ID_EDIT_PASTE,          VIRTKEY, CONTROL, NOINVERT
+    VK_DELETE,      ID_EDIT_CLEAR,          VIRTKEY, NOINVERT
+    "A",            ID_EDIT_SELECT_ALL,     VIRTKEY, CONTROL, NOINVERT
+    "X",            ID_IMAGE_CROP,          VIRTKEY, SHIFT, CONTROL, NOINVERT
+    "W",            ID_IMAGE_RESIZE,        VIRTKEY, CONTROL, NOINVERT
+    "E",            ID_IMAGE_PROPERTIES,    VIRTKEY, CONTROL, NOINVERT
+    "I",            ID_IMAGE_INVERT,        VIRTKEY, SHIFT, CONTROL, NOINVERT
     VK_PRIOR,       ID_VIEW_ZOOM_IN,        VIRTKEY, CONTROL, NOINVERT
     VK_NEXT,        ID_VIEW_ZOOM_OUT,       VIRTKEY, CONTROL, NOINVERT
     "1",            ID_VIEW_ZOOM_100,       VIRTKEY, CONTROL, NOINVERT

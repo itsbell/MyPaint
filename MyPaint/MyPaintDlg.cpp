@@ -6,13 +6,20 @@
 #include "MyPaint.h"
 #include "MyPaintDlg.h"
 
+#include <algorithm>
 #include <cmath>
 
-#include <algorithm>
+#include <shlwapi.h>
 
+#include "Core/ImageCommands.h"
 #include "Tools/FreehandTool.h"
+#include "Tools/SelectTool.h"
 #include "Tools/ShapeTool.h"
 #include "Tools/SimpleTools.h"
+#include "Tools/TextTool.h"
+#include "UI/Clipboard.h"
+#include "UI/ImageDialogs.h"
+#include "UI/ImageFile.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -23,8 +30,7 @@ namespace
 constexpr int kDefaultCanvasWidth = 800;
 constexpr int kDefaultCanvasHeight = 600;
 
-/** @brief 창 최소 크기 (96 DPI 기준). 폭은 도구 패널이 다 보이는 정도 */
-constexpr int kMinWindowWidth = 960;
+/** @brief 창 최소 높이 (96 DPI 기준). 최소 폭은 도구 패널 폭에 맞춥니다. */
 constexpr int kMinWindowHeight = 480;
 
 /** @brief 상태 표시줄 칸 */
@@ -36,6 +42,13 @@ enum StatusPart
     kPartZoom,
     kPartCount,
 };
+
+CString SizeText(CSize size)
+{
+    CString text;
+    text.Format(L"%d × %dpx", size.cx, size.cy);
+    return text;
+}
 } // namespace
 
 BEGIN_MESSAGE_MAP(CMyPaintDlg, CDialog)
@@ -44,10 +57,24 @@ BEGIN_MESSAGE_MAP(CMyPaintDlg, CDialog)
     ON_WM_SIZE()
     ON_WM_GETMINMAXINFO()
     ON_WM_INITMENUPOPUP()
+    ON_WM_DROPFILES()
     ON_COMMAND(ID_FILE_NEW, &CMyPaintDlg::OnFileNew)
+    ON_COMMAND(ID_FILE_OPEN, &CMyPaintDlg::OnFileOpen)
+    ON_COMMAND(ID_FILE_SAVE, &CMyPaintDlg::OnFileSave)
+    ON_COMMAND(ID_FILE_SAVE_AS, &CMyPaintDlg::OnFileSaveAs)
     ON_COMMAND(ID_APP_EXIT, &CMyPaintDlg::OnAppExit)
     ON_COMMAND(ID_EDIT_UNDO, &CMyPaintDlg::OnEditUndo)
     ON_COMMAND(ID_EDIT_REDO, &CMyPaintDlg::OnEditRedo)
+    ON_COMMAND(ID_EDIT_CUT, &CMyPaintDlg::OnEditCut)
+    ON_COMMAND(ID_EDIT_COPY, &CMyPaintDlg::OnEditCopy)
+    ON_COMMAND(ID_EDIT_PASTE, &CMyPaintDlg::OnEditPaste)
+    ON_COMMAND(ID_EDIT_CLEAR, &CMyPaintDlg::OnEditDelete)
+    ON_COMMAND(ID_EDIT_SELECT_ALL, &CMyPaintDlg::OnEditSelectAll)
+    ON_COMMAND(ID_IMAGE_CROP, &CMyPaintDlg::OnImageCrop)
+    ON_COMMAND(ID_IMAGE_RESIZE, &CMyPaintDlg::OnImageResize)
+    ON_COMMAND(ID_IMAGE_PROPERTIES, &CMyPaintDlg::OnImageProperties)
+    ON_COMMAND_RANGE(ID_IMAGE_ROTATE_RIGHT, ID_IMAGE_FLIP_V, &CMyPaintDlg::OnImageTransform)
+    ON_COMMAND(ID_IMAGE_INVERT, &CMyPaintDlg::OnImageInvert)
     ON_COMMAND(ID_VIEW_ZOOM_IN, &CMyPaintDlg::OnViewZoomIn)
     ON_COMMAND(ID_VIEW_ZOOM_OUT, &CMyPaintDlg::OnViewZoomOut)
     ON_COMMAND(ID_VIEW_ZOOM_100, &CMyPaintDlg::OnViewZoom100)
@@ -66,6 +93,8 @@ CMyPaintDlg::CMyPaintDlg(CWnd* pParent) : CDialog(IDD_MYPAINT_DIALOG, pParent)
     tool(ToolId::Picker) = std::make_unique<PickerTool>();
     tool(ToolId::Magnifier) = std::make_unique<MagnifierTool>();
     tool(ToolId::Shape) = std::make_unique<ShapeTool>();
+    tool(ToolId::Select) = std::make_unique<::SelectTool>();
+    tool(ToolId::Text) = std::make_unique<::TextTool>();
 }
 
 CMyPaintDlg::~CMyPaintDlg()
@@ -85,6 +114,7 @@ BOOL CMyPaintDlg::OnInitDialog()
     SetIcon(m_hIcon, TRUE);  // 큰 아이콘
     SetIcon(m_hIcon, FALSE); // 작은 아이콘
     m_hAccel = ::LoadAccelerators(AfxGetResourceHandle(), MAKEINTRESOURCE(IDR_ACCELERATOR));
+    DragAcceptFiles(TRUE);
 
     m_statusBar.Create(WS_CHILD | WS_VISIBLE | CCS_BOTTOM | SBARS_SIZEGRIP, CRect(0, 0, 0, 0), this, IDC_STATUSBAR);
     m_toolPanel.Create(this, IDC_TOOLPANEL);
@@ -108,6 +138,18 @@ BOOL CMyPaintDlg::OnInitDialog()
     MoveWindow(work.left + (work.Width() - width) / 2, work.top + (work.Height() - height) / 2, width, height);
     LayoutControls();
 
+    // 명령줄로 받은 파일을 엽니다. (탐색기에서 "연결 프로그램"으로 연 경우 등)
+    int argc = 0;
+    LPWSTR* argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+    if (argv != nullptr)
+    {
+        if (argc > 1)
+        {
+            OpenDocument(argv[1]);
+        }
+        ::LocalFree(argv);
+    }
+
     UpdateTitle();
     UpdateStatusBar();
 
@@ -125,7 +167,8 @@ BOOL CMyPaintDlg::PreTranslateMessage(MSG* pMsg)
         }
         if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_ESCAPE)
         {
-            m_canvas.CancelTool();
+            m_canvas.HandleEscape();
+            UpdateSelectionStatus();
             return TRUE;
         }
     }
@@ -138,8 +181,8 @@ BOOL CMyPaintDlg::PreTranslateMessage(MSG* pMsg)
 
 void CMyPaintDlg::OnClose()
 {
-    m_canvas.CancelTool();
-    if (ConfirmDiscardChanges())
+    CommitTool();
+    if (ConfirmSaveChanges())
     {
         EndDialog(IDCANCEL);
     }
@@ -162,7 +205,9 @@ void CMyPaintDlg::OnSize(UINT nType, int cx, int cy)
 
 void CMyPaintDlg::OnGetMinMaxInfo(MINMAXINFO* lpMMI)
 {
-    lpMMI->ptMinTrackSize.x = ScaleForDpi(kMinWindowWidth);
+    // 도구 패널이 잘리지 않을 만큼의 폭 (창 테두리 여유 포함)
+    const int panelWidth = m_toolPanel.GetSafeHwnd() != nullptr ? m_toolPanel.PreferredWidth() : 0;
+    lpMMI->ptMinTrackSize.x = (std::max)(ScaleForDpi(640), panelWidth + ScaleForDpi(24));
     lpMMI->ptMinTrackSize.y = ScaleForDpi(kMinWindowHeight);
     CDialog::OnGetMinMaxInfo(lpMMI);
 }
@@ -211,25 +256,51 @@ void CMyPaintDlg::OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu)
         return;
     }
     // 대화 상자에는 ON_UPDATE_COMMAND_UI가 메뉴에 자동으로 적용되지 않으므로 직접 갱신합니다.
-    pPopupMenu->EnableMenuItem(ID_EDIT_UNDO, MF_BYCOMMAND | (m_document.CanUndo() ? MF_ENABLED : MF_GRAYED));
-    pPopupMenu->EnableMenuItem(ID_EDIT_REDO, MF_BYCOMMAND | (m_document.CanRedo() ? MF_ENABLED : MF_GRAYED));
+    auto enable = [pPopupMenu](UINT id, bool on) {
+        pPopupMenu->EnableMenuItem(id, MF_BYCOMMAND | (on ? MF_ENABLED : MF_GRAYED));
+    };
+    const bool hasSelection = m_currentTool == ToolId::Select && Selection().HasSelection();
+    const bool textEditing = m_currentTool == ToolId::Text && Text().IsEditing();
+    enable(ID_EDIT_UNDO, m_document.CanUndo() || textEditing);
+    enable(ID_EDIT_REDO, m_document.CanRedo());
+    enable(ID_EDIT_CUT, hasSelection);
+    enable(ID_EDIT_COPY, hasSelection);
+    enable(ID_EDIT_CLEAR, hasSelection);
+    enable(ID_IMAGE_CROP, hasSelection);
+    enable(ID_EDIT_PASTE,
+           Clipboard::HasImage() || (textEditing && ::IsClipboardFormatAvailable(CF_UNICODETEXT)));
 }
 
-bool CMyPaintDlg::ConfirmDiscardChanges()
+void CMyPaintDlg::OnDropFiles(HDROP hDropInfo)
 {
-    // 파일 저장 기능을 넣으면 [저장] [저장 안 함] [취소] 세 가지로 바꿉니다.
-    if (!m_document.IsModified())
+    const UINT length = ::DragQueryFileW(hDropInfo, 0, nullptr, 0);
+    CString path;
+    if (length > 0)
     {
-        return true;
+        ::DragQueryFileW(hDropInfo, 0, path.GetBuffer(static_cast<int>(length) + 1), length + 1);
+        path.ReleaseBuffer();
     }
-    return AfxMessageBox(L"변경 내용이 저장되지 않았습니다.\n저장하지 않고 계속할까요?", MB_YESNO | MB_ICONWARNING) ==
-           IDYES;
+    ::DragFinish(hDropInfo);
+
+    if (!path.IsEmpty())
+    {
+        CommitTool();
+        if (ConfirmSaveChanges())
+        {
+            OpenDocument(path);
+        }
+    }
 }
+
+// ---------------------------------------------------------------------------
+// 상태 표시
+// ---------------------------------------------------------------------------
 
 void CMyPaintDlg::UpdateTitle()
 {
+    const CString name = m_filePath.IsEmpty() ? CString(L"제목 없음") : CString(::PathFindFileNameW(m_filePath));
     CString title;
-    title.Format(L"%s제목 없음 - MyPaint", m_document.IsModified() ? L"*" : L"");
+    title.Format(L"%s%s - MyPaint", m_document.IsModified() ? L"*" : L"", name.GetString());
     if (title != m_title)
     {
         m_title = title;
@@ -243,13 +314,22 @@ void CMyPaintDlg::UpdateStatusBar()
     {
         return;
     }
-    const CSize size = m_document.Size();
-    CString text;
-    text.Format(L"%d × %dpx", size.cx, size.cy);
-    m_statusBar.SetText(text, kPartCanvasSize, 0);
+    m_statusBar.SetText(SizeText(m_document.Size()), kPartCanvasSize, 0);
 
+    CString text;
     text.Format(L"%d%%", static_cast<int>(std::lround(m_canvas.Zoom() * 100.0)));
     m_statusBar.SetText(text, kPartZoom, 0);
+    UpdateSelectionStatus();
+}
+
+void CMyPaintDlg::UpdateSelectionStatus()
+{
+    if (m_statusBar.GetSafeHwnd() == nullptr)
+    {
+        return;
+    }
+    const CRect overlay = m_tools[static_cast<size_t>(m_currentTool)]->OverlayRect();
+    m_statusBar.SetText(overlay.IsRectEmpty() ? CString() : SizeText(overlay.Size()), kPartSelection, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +355,7 @@ void CMyPaintDlg::OnCanvasCursor(bool inside, CPoint docPoint)
         text.Format(L"%d, %dpx", docPoint.x, docPoint.y);
     }
     m_statusBar.SetText(text, kPartCursor, 0);
+    UpdateSelectionStatus();
 }
 
 void CMyPaintDlg::OnCanvasZoomChanged(double /*zoom*/)
@@ -286,7 +367,34 @@ void CMyPaintDlg::OnCanvasZoomChanged(double /*zoom*/)
 // 도구
 // ---------------------------------------------------------------------------
 
-void CMyPaintDlg::SelectTool(ToolId tool)
+::SelectTool& CMyPaintDlg::Selection()
+{
+    return *static_cast<::SelectTool*>(m_tools[static_cast<size_t>(ToolId::Select)].get());
+}
+
+::TextTool& CMyPaintDlg::Text()
+{
+    return *static_cast<::TextTool*>(m_tools[static_cast<size_t>(ToolId::Text)].get());
+}
+
+ToolContext CMyPaintDlg::MakeToolContext()
+{
+    return ToolContext{m_document, m_toolSettings, *this, false};
+}
+
+void CMyPaintDlg::CommitTool()
+{
+    m_canvas.CommitTool();
+    UpdateSelectionStatus();
+}
+
+void CMyPaintDlg::ApplyCommand(std::unique_ptr<Command> command)
+{
+    CommitTool();
+    m_document.Apply(std::move(command));
+}
+
+void CMyPaintDlg::ChooseTool(ToolId tool)
 {
     if (tool != m_currentTool)
     {
@@ -299,17 +407,19 @@ void CMyPaintDlg::SelectTool(ToolId tool)
         m_canvas.SetTool(m_tools[static_cast<size_t>(tool)].get(), &m_toolSettings, this);
     }
     m_toolPanel.SetCurrentTool(tool);
+    UpdateSelectionStatus();
 }
 
 void CMyPaintDlg::SetToolColor(MouseButton button, COLORREF color)
 {
     (button == MouseButton::Left ? m_toolSettings.color1 : m_toolSettings.color2) = color;
     m_toolPanel.Invalidate(FALSE);
+    m_canvas.NotifySettingsChanged();
 }
 
 void CMyPaintDlg::RestorePreviousTool()
 {
-    SelectTool(m_previousTool);
+    ChooseTool(m_previousTool);
 }
 
 void CMyPaintDlg::ZoomAt(CPoint docPoint, bool zoomIn)
@@ -319,12 +429,19 @@ void CMyPaintDlg::ZoomAt(CPoint docPoint, bool zoomIn)
 
 void CMyPaintDlg::OnPanelToolSelected(ToolId tool)
 {
-    SelectTool(tool);
+    ChooseTool(tool);
 }
 
 void CMyPaintDlg::OnPanelSettingsChanged()
 {
-    // 설정은 도구가 드래그를 시작할 때 읽으므로 따로 할 일이 없습니다.
+    // 대부분의 설정은 도구가 드래그를 시작할 때 읽지만, 입력 중인 텍스트는 바로 바뀌어야 합니다.
+    m_canvas.NotifySettingsChanged();
+}
+
+void CMyPaintDlg::OnPanelCommand(UINT commandId)
+{
+    SendMessage(WM_COMMAND, commandId);
+    m_canvas.SetFocus(); // 단축키와 텍스트 입력이 계속 캔버스로 가도록
 }
 
 void CMyPaintDlg::OnPanelEditColors()
@@ -339,6 +456,38 @@ void CMyPaintDlg::OnPanelEditColors()
     target = dialog.GetColor();
     AddCustomColor(target);
     m_toolPanel.Invalidate(FALSE);
+    m_canvas.NotifySettingsChanged();
+}
+
+void CMyPaintDlg::OnPanelEditFont()
+{
+    // 글꼴 대화 상자는 화면 DPI로 크기를 다루므로 포인트 ↔ 논리 단위를 화면 기준으로 바꿉니다.
+    CClientDC screen(this);
+    const int dpiY = screen.GetDeviceCaps(LOGPIXELSY);
+
+    LOGFONT lf{};
+    lf.lfHeight = -::MulDiv(m_toolSettings.textPointSize, dpiY, 72);
+    lf.lfWeight = m_toolSettings.textBold ? FW_BOLD : FW_NORMAL;
+    lf.lfItalic = m_toolSettings.textItalic ? TRUE : FALSE;
+    lf.lfUnderline = m_toolSettings.textUnderline ? TRUE : FALSE;
+    lf.lfCharSet = DEFAULT_CHARSET;
+    wcsncpy_s(lf.lfFaceName, m_toolSettings.textFace.c_str(), _TRUNCATE);
+
+    CFontDialog dialog(&lf, CF_SCREENFONTS | CF_EFFECTS, nullptr, this);
+    dialog.m_cf.rgbColors = m_toolSettings.color1; // 글자 색 = 색 1
+    if (dialog.DoModal() != IDOK)
+    {
+        return;
+    }
+    m_toolSettings.textFace = dialog.GetFaceName().GetString();
+    m_toolSettings.textPointSize = (std::max)(1, dialog.GetSize() / 10);
+    m_toolSettings.textBold = dialog.IsBold() != FALSE;
+    m_toolSettings.textItalic = dialog.IsItalic() != FALSE;
+    m_toolSettings.textUnderline = dialog.IsUnderline() != FALSE;
+    m_toolSettings.color1 = dialog.GetColor();
+    m_toolPanel.Invalidate(FALSE);
+    m_canvas.NotifySettingsChanged();
+    m_canvas.SetFocus();
 }
 
 void CMyPaintDlg::AddCustomColor(COLORREF color)
@@ -359,17 +508,135 @@ void CMyPaintDlg::AddCustomColor(COLORREF color)
 }
 
 // ---------------------------------------------------------------------------
-// 명령
+// 파일
 // ---------------------------------------------------------------------------
+
+bool CMyPaintDlg::ConfirmSaveChanges()
+{
+    if (!m_document.IsModified())
+    {
+        return true;
+    }
+    const CString name = m_filePath.IsEmpty() ? CString(L"제목 없음") : CString(::PathFindFileNameW(m_filePath));
+    CString message;
+    message.Format(L"%s의 변경 내용을 저장하시겠습니까?", name.GetString());
+    switch (AfxMessageBox(message, MB_YESNOCANCEL | MB_ICONQUESTION))
+    {
+    case IDYES:
+        return SaveDocument();
+    case IDNO:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool CMyPaintDlg::OpenDocument(const CString& path)
+{
+    Surface surface;
+    CString error;
+    if (!ImageFile::Load(path, surface, error))
+    {
+        AfxMessageBox(error, MB_ICONERROR);
+        return false;
+    }
+    m_canvas.CommitTool();
+    Selection().Discard();
+    m_filePath = path;
+    m_document.Reset(std::move(surface));
+    m_canvas.SetZoom(1.0);
+    UpdateTitle();
+    return true;
+}
+
+bool CMyPaintDlg::SaveDocument()
+{
+    CommitTool();
+    if (m_filePath.IsEmpty())
+    {
+        return SaveDocumentAs();
+    }
+    CString error;
+    if (!ImageFile::Save(m_filePath, m_document.GetSurface(), error))
+    {
+        AfxMessageBox(error, MB_ICONERROR);
+        return false;
+    }
+    m_document.MarkSaved();
+    UpdateTitle();
+    return true;
+}
+
+bool CMyPaintDlg::SaveDocumentAs()
+{
+    CommitTool();
+    const CString defaultName =
+        m_filePath.IsEmpty() ? CString(L"제목 없음.png") : CString(::PathFindFileNameW(m_filePath));
+    CFileDialog dialog(FALSE, L"png", defaultName, OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST,
+                       ImageFile::kSaveFilter, this);
+
+    // 지금 파일의 형식을 기본 필터로 고릅니다.
+    CString ext = ::PathFindExtensionW(defaultName);
+    ext.MakeLower();
+    dialog.m_ofn.nFilterIndex = (ext == L".jpg" || ext == L".jpeg") ? 2 : (ext == L".bmp") ? 3 : (ext == L".gif") ? 4 : 1;
+
+    if (dialog.DoModal() != IDOK)
+    {
+        return false;
+    }
+    CString path = dialog.GetPathName();
+    if (!ImageFile::IsSupportedExtension(path))
+    {
+        path += ImageFile::ExtensionForSaveFilter(static_cast<int>(dialog.m_ofn.nFilterIndex));
+    }
+
+    CString error;
+    if (!ImageFile::Save(path, m_document.GetSurface(), error))
+    {
+        AfxMessageBox(error, MB_ICONERROR);
+        return false;
+    }
+    m_filePath = path;
+    m_document.MarkSaved();
+    UpdateTitle();
+    return true;
+}
 
 void CMyPaintDlg::OnFileNew()
 {
-    m_canvas.CancelTool();
-    if (ConfirmDiscardChanges())
+    CommitTool();
+    if (ConfirmSaveChanges())
     {
+        Selection().Discard();
+        m_filePath.Empty();
         m_document.New(kDefaultCanvasWidth, kDefaultCanvasHeight);
         m_canvas.SetZoom(1.0);
+        UpdateTitle();
     }
+}
+
+void CMyPaintDlg::OnFileOpen()
+{
+    CommitTool();
+    if (!ConfirmSaveChanges())
+    {
+        return;
+    }
+    CFileDialog dialog(TRUE, nullptr, nullptr, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY, ImageFile::kOpenFilter, this);
+    if (dialog.DoModal() == IDOK)
+    {
+        OpenDocument(dialog.GetPathName());
+    }
+}
+
+void CMyPaintDlg::OnFileSave()
+{
+    SaveDocument();
+}
+
+void CMyPaintDlg::OnFileSaveAs()
+{
+    SaveDocumentAs();
 }
 
 void CMyPaintDlg::OnAppExit()
@@ -377,17 +644,186 @@ void CMyPaintDlg::OnAppExit()
     PostMessage(WM_CLOSE);
 }
 
+// ---------------------------------------------------------------------------
+// 편집
+// ---------------------------------------------------------------------------
+
 void CMyPaintDlg::OnEditUndo()
 {
-    m_canvas.CancelTool();
+    // 떠 있는 선택 영역이나 입력 중인 텍스트는 먼저 확정되므로, 실행 취소하면 그 작업이 먼저 되돌아갑니다.
+    CommitTool();
     m_document.Undo();
 }
 
 void CMyPaintDlg::OnEditRedo()
 {
-    m_canvas.CancelTool();
+    CommitTool();
     m_document.Redo();
 }
+
+void CMyPaintDlg::OnEditCopy()
+{
+    if (m_currentTool != ToolId::Select)
+    {
+        return;
+    }
+    CSize size;
+    std::vector<Pixel> pixels;
+    if (Selection().GetSelectionPixels(m_document, size, pixels))
+    {
+        Clipboard::PutImage(m_hWnd, size, pixels);
+    }
+}
+
+void CMyPaintDlg::OnEditCut()
+{
+    if (m_currentTool != ToolId::Select || !Selection().HasSelection())
+    {
+        return;
+    }
+    OnEditCopy();
+    ToolContext context = MakeToolContext();
+    Selection().DeleteSelection(context);
+    m_canvas.InvalidateToolPreview();
+    UpdateSelectionStatus();
+}
+
+void CMyPaintDlg::OnEditPaste()
+{
+    // 텍스트를 입력하는 중이면 글자를 붙여넣습니다.
+    if (m_currentTool == ToolId::Text && Text().IsEditing())
+    {
+        std::wstring text;
+        if (Clipboard::GetText(m_hWnd, text))
+        {
+            ToolContext context = MakeToolContext();
+            Text().InsertText(context, text);
+            m_canvas.InvalidateToolPreview();
+        }
+        return;
+    }
+
+    CSize size;
+    std::vector<Pixel> pixels;
+    if (!Clipboard::GetImage(m_hWnd, size, pixels))
+    {
+        return;
+    }
+    CommitTool();
+
+    // 붙여넣을 그림이 캔버스보다 크면 캔버스를 늘립니다. (그림판과 같은 동작)
+    const CSize canvas = m_document.Size();
+    if (size.cx > canvas.cx || size.cy > canvas.cy)
+    {
+        const CSize enlarged((std::max)(size.cx, canvas.cx), (std::max)(size.cy, canvas.cy));
+        m_document.Apply(std::make_unique<CanvasSizeCommand>(enlarged, CPoint(0, 0), m_toolSettings.color2));
+    }
+
+    ChooseTool(ToolId::Select);
+    // 화면에 보이는 왼쪽 위에 붙이되, 캔버스 안에 들어가도록 당깁니다.
+    CPoint at = m_canvas.VisibleDocOrigin();
+    const CSize current = m_document.Size();
+    at.x = (std::min)(at.x, (std::max)(0L, current.cx - size.cx));
+    at.y = (std::min)(at.y, (std::max)(0L, current.cy - size.cy));
+
+    ToolContext context = MakeToolContext();
+    Selection().PasteFloating(context, size, std::move(pixels), at);
+    m_canvas.InvalidateToolPreview();
+    UpdateSelectionStatus();
+}
+
+void CMyPaintDlg::OnEditDelete()
+{
+    if (m_currentTool != ToolId::Select || !Selection().HasSelection())
+    {
+        return;
+    }
+    ToolContext context = MakeToolContext();
+    Selection().DeleteSelection(context);
+    m_canvas.InvalidateToolPreview();
+    UpdateSelectionStatus();
+}
+
+void CMyPaintDlg::OnEditSelectAll()
+{
+    ChooseTool(ToolId::Select);
+    ToolContext context = MakeToolContext();
+    Selection().SelectAll(context);
+    m_canvas.InvalidateToolPreview();
+    UpdateSelectionStatus();
+}
+
+// ---------------------------------------------------------------------------
+// 이미지
+// ---------------------------------------------------------------------------
+
+void CMyPaintDlg::OnImageCrop()
+{
+    if (m_currentTool != ToolId::Select || !Selection().HasSelection())
+    {
+        return;
+    }
+    const CRect area = Selection().SelectionRect();
+    // 떠 있는 내용을 먼저 확정한 뒤, 그 자리로 캔버스를 자릅니다.
+    ApplyCommand(std::make_unique<CanvasSizeCommand>(area.Size(), CPoint(-area.left, -area.top),
+                                                     m_toolSettings.color2));
+}
+
+void CMyPaintDlg::OnImageResize()
+{
+    CommitTool();
+    CResizeDlg dialog(m_document.Size(), this);
+    if (dialog.DoModal() != IDOK)
+    {
+        return;
+    }
+    if (dialog.NewSize() == m_document.Size() && dialog.SkewHorizontal() == 0 && dialog.SkewVertical() == 0)
+    {
+        return;
+    }
+    ApplyCommand(std::make_unique<ResizeSkewCommand>(dialog.NewSize(), dialog.SkewHorizontal(),
+                                                     dialog.SkewVertical(), m_toolSettings.color2));
+}
+
+void CMyPaintDlg::OnImageProperties()
+{
+    CommitTool();
+    CPropertiesDlg dialog(m_document.Size(), this);
+    if (dialog.DoModal() == IDOK && dialog.NewSize() != m_document.Size())
+    {
+        ApplyCommand(std::make_unique<CanvasSizeCommand>(dialog.NewSize(), CPoint(0, 0), m_toolSettings.color2));
+    }
+}
+
+void CMyPaintDlg::OnImageTransform(UINT commandId)
+{
+    TransformKind kind = TransformKind::RotateRight;
+    switch (commandId)
+    {
+    case ID_IMAGE_ROTATE_LEFT: kind = TransformKind::RotateLeft; break;
+    case ID_IMAGE_ROTATE_180: kind = TransformKind::Rotate180; break;
+    case ID_IMAGE_FLIP_H: kind = TransformKind::FlipHorizontal; break;
+    case ID_IMAGE_FLIP_V: kind = TransformKind::FlipVertical; break;
+    default: break;
+    }
+    ApplyCommand(std::make_unique<TransformCommand>(kind));
+}
+
+void CMyPaintDlg::OnImageInvert()
+{
+    // 선택 영역이 있으면 그 영역만, 없으면 이미지 전체를 반전합니다.
+    if (m_currentTool == ToolId::Select && Selection().HasSelection())
+    {
+        const CRect area = Selection().SelectionRect();
+        ApplyCommand(std::make_unique<InvertCommand>(area));
+        return;
+    }
+    ApplyCommand(std::make_unique<InvertCommand>(m_document.GetSurface().Bounds()));
+}
+
+// ---------------------------------------------------------------------------
+// 보기
+// ---------------------------------------------------------------------------
 
 void CMyPaintDlg::OnViewZoomIn()
 {

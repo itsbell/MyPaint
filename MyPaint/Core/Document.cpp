@@ -14,11 +14,16 @@ bool Document::New(int width, int height, COLORREF background)
     {
         return false;
     }
+    Reset(std::move(surface));
+    return true;
+}
+
+void Document::Reset(Surface&& surface)
+{
     m_surface = std::move(surface);
     m_history.Clear();
     m_savedId = m_history.CurrentId();
     NotifyReset();
-    return true;
 }
 
 void Document::Apply(std::unique_ptr<Command> command)
@@ -38,12 +43,20 @@ void Document::Apply(std::unique_ptr<Command> command)
     command->Execute(m_surface);
     const CRect dirty = entry.before.rect;
     const Command& applied = *command;
+    const bool changesSize = command->ChangesSize();
 
     entry.id = m_nextId++;
     entry.command = std::move(command);
     m_history.Push(std::move(entry));
 
-    NotifyChanged(dirty);
+    if (changesSize)
+    {
+        NotifyReset();
+    }
+    else
+    {
+        NotifyChanged(dirty);
+    }
     for (IDocumentListener* listener : m_listeners)
     {
         listener->OnCommandApplied(applied);
@@ -57,6 +70,19 @@ bool Document::Undo()
         return false;
     }
     const HistoryEntry& entry = m_history.StepBack();
+    if (entry.command->ChangesSize())
+    {
+        // 크기를 바꾸는 명령은 이미지 전체를 백업해 두었으므로 원래 크기의 표면을 다시 만듭니다.
+        Surface restored;
+        if (!restored.Create(entry.before.rect.Width(), entry.before.rect.Height(), RGB(255, 255, 255)))
+        {
+            return false;
+        }
+        restored.WriteBlock(entry.before);
+        m_surface = std::move(restored);
+        NotifyReset();
+        return true;
+    }
     m_surface.WriteBlock(entry.before);
     NotifyChanged(entry.before.rect);
     return true;
@@ -70,7 +96,14 @@ bool Document::Redo()
     }
     const HistoryEntry& entry = m_history.StepForward();
     entry.command->Execute(m_surface);
-    NotifyChanged(entry.before.rect);
+    if (entry.command->ChangesSize())
+    {
+        NotifyReset();
+    }
+    else
+    {
+        NotifyChanged(entry.before.rect);
+    }
     return true;
 }
 

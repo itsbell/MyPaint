@@ -186,3 +186,35 @@ void Surface::CopyFrom(const Surface& source, const CRect& rect)
         std::copy(src + offset, src + offset + w, dst + offset);
     }
 }
+
+void Surface::FillRect(const CRect& rect, COLORREF color)
+{
+    CRect r;
+    if (!r.IntersectRect(rect, Bounds()))
+    {
+        return;
+    }
+    const Pixel value = ToPixel(color);
+    Pixel* bits = Bits();
+    for (int y = r.top; y < r.bottom; ++y)
+    {
+        Pixel* row = bits + static_cast<size_t>(y) * m_width;
+        std::fill(row + r.left, row + r.right, value);
+    }
+}
+
+void Surface::WritePixels(CPoint dest, int width, int height, const Pixel* pixels)
+{
+    CRect r;
+    if (pixels == nullptr || !r.IntersectRect(CRect(dest, CSize(width, height)), Bounds()))
+    {
+        return;
+    }
+    Pixel* bits = Bits();
+    const int count = r.Width();
+    for (int y = r.top; y < r.bottom; ++y)
+    {
+        const Pixel* src = pixels + static_cast<size_t>(y - dest.y) * width + (r.left - dest.x);
+        std::copy(src, src + count, bits + static_cast<size_t>(y) * m_width + r.left);
+    }
+}

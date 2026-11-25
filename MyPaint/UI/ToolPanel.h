@@ -25,6 +25,12 @@ public:
 
     /** @brief [색 편집]을 눌렀습니다. */
     virtual void OnPanelEditColors() = 0;
+
+    /** @brief [글꼴]을 눌렀습니다. (텍스트 도구) */
+    virtual void OnPanelEditFont() = 0;
+
+    /** @brief 메뉴와 같은 명령 버튼(붙여넣기, 자르기, 회전 등)을 눌렀습니다. */
+    virtual void OnPanelCommand(UINT commandId) = 0;
 };
 
 /**
@@ -74,6 +80,10 @@ private:
         Palette,    ///< value = 기본 팔레트 번호
         Custom,     ///< value = 사용자 지정 색 번호
         EditColors, ///< 색 편집 대화 상자
+        Command,    ///< value = 명령 ID (붙여넣기, 잘라내기, 복사, 자르기, 크기 조정)
+        RotateMenu, ///< 회전/대칭 선택 메뉴
+        Font,       ///< 텍스트 글꼴 대화 상자
+        TextBackground, ///< 텍스트 배경 투명/불투명
     };
 
     struct Item
@@ -81,7 +91,8 @@ private:
         ItemKind kind;
         int value;
         CRect rect;
-        CString tip;
+        CString tip;   ///< 툴팁
+        CString label; ///< 버튼에 쓰는 글자 (없으면 아이콘만)
     };
 
     struct Group
@@ -104,6 +115,12 @@ private:
 
     void DrawItem(CDC& dc, const Item& item, bool hover);
     void DrawGlyph(CDC& dc, const CRect& rect, const wchar_t* glyph, CFont& font);
+
+    /** @brief 큰 버튼: 위에 아이콘, 아래에 글자 */
+    void DrawBigButton(CDC& dc, const CRect& rect, const wchar_t* glyph, const CString& label);
+
+    /** @brief 작은 버튼: 왼쪽에 아이콘, 오른쪽에 글자 */
+    void DrawSmallButton(CDC& dc, const CRect& rect, const wchar_t* glyph, const CString& label);
     void DrawFillIcon(CDC& dc, const CRect& rect);
     void DrawSizeIcon(CDC& dc, const CRect& rect);
     void DrawSwatch(CDC& dc, const CRect& rect, COLORREF color);

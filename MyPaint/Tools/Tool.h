@@ -6,11 +6,13 @@
  */
 
 #include <array>
+#include <string>
 
 #include "Core/ShapeCommand.h"
 
 class Command;
 class Document;
+class Surface;
 
 /** @brief 도구 종류 */
 enum class ToolId
@@ -22,6 +24,8 @@ enum class ToolId
     Magnifier,
     Brush,
     Shape,
+    Select,
+    Text,
     Count,
 };
 
@@ -58,6 +62,13 @@ struct ToolSettings
     ShapeKind shapeKind = ShapeKind::Rectangle;
     bool shapeOutline = true; ///< 도형 윤곽선
     bool shapeFill = false;   ///< 도형 채우기
+
+    std::wstring textFace = L"맑은 고딕"; ///< 텍스트 글꼴 이름
+    int textPointSize = 11;               ///< 텍스트 크기 (포인트, 96 DPI 기준 픽셀로 바꿔 그림)
+    bool textBold = false;
+    bool textItalic = false;
+    bool textUnderline = false;
+    bool textOpaque = false; ///< 텍스트 상자 배경을 색 2로 채울지
 
     /** @brief 사용자 지정 색. 아직 정하지 않은 칸은 CLR_INVALID */
     std::array<COLORREF, kCustomColorCount> customColors = MakeEmptyCustomColors();
@@ -136,18 +147,43 @@ public:
     virtual void OnMove(ToolContext& context, CPoint point) = 0;
     virtual void OnUp(ToolContext& context, CPoint point) = 0;
 
-    /** @brief 진행 중인 작업을 버립니다. (Esc, 마우스 캡처 상실 등) */
+    /** @brief 진행 중인 드래그를 버립니다. (Esc, 마우스 캡처 상실 등) */
     virtual void Cancel() {}
 
-    /** @brief 드래그 등 진행 중인 작업이 있는지 */
+    /**
+     * @brief 드래그가 끝난 뒤에도 남아 있는 작업(떠 있는 선택 영역, 입력 중인 텍스트)을 문서에 확정합니다.
+     *
+     * 도구를 바꾸거나, 실행 취소/저장 같은 명령을 실행하기 전에 불립니다.
+     */
+    virtual void Commit(ToolContext& /*context*/) {}
+
+    /** @brief 드래그 중인지 */
     virtual bool IsActive() const { return false; }
 
     /** @brief 진행 중인 작업의 미리보기. 캔버스가 문서 사본 위에 실행해서 보여 줍니다. */
     virtual const Command* PreviewCommand() const { return nullptr; }
 
+    /** @brief 문서 사본(surface) 위에 미리보기를 그립니다. 기본은 PreviewCommand()를 실행합니다. */
+    virtual void DrawPreview(Surface& surface) const;
+
     /** @brief 지난번 호출 뒤 미리보기가 바뀐 영역(문서 좌표)을 돌려주고 비웁니다. */
     virtual CRect TakePreviewDirty() { return CRect(); }
 
-    /** @brief 캔버스 위에서 보일 커서 */
-    virtual HCURSOR Cursor() const { return ::LoadCursor(nullptr, IDC_CROSS); }
+    /** @brief 점선 테두리로 표시할 영역 (선택 영역, 텍스트 상자). 없으면 빈 사각형 */
+    virtual CRect OverlayRect() const { return CRect(); }
+
+    /** @brief 문서 좌표 point 위에서 보일 커서 */
+    virtual HCURSOR CursorAt(CPoint /*point*/) const { return ::LoadCursor(nullptr, IDC_CROSS); }
+
+    /** @brief 키보드 문자 입력을 받을지 (텍스트 입력 중) */
+    virtual bool WantsTextInput() const { return false; }
+
+    /** @brief 문자 입력 (WM_CHAR). 백스페이스는 L'\b', Enter는 L'\r'로 옵니다. */
+    virtual void OnChar(ToolContext& /*context*/, wchar_t /*ch*/) {}
+
+    /** @brief IME 조합 중인 문자열이 바뀌었습니다. (한글 입력) */
+    virtual void OnComposition(ToolContext& /*context*/, const std::wstring& /*composing*/) {}
+
+    /** @brief 도구 패널에서 색, 글꼴 같은 설정이 바뀌었습니다. 미리보기를 다시 만들 때 씁니다. */
+    virtual void OnSettingsChanged(ToolContext& /*context*/) {}
 };
