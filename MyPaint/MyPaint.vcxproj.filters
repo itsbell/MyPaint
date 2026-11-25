@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="App">
+      <UniqueIdentifier>{6a1c3e52-1f0e-4c39-9a52-3b0f6b1d0a01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core">
+      <UniqueIdentifier>{6a1c3e52-1f0e-4c39-9a52-3b0f6b1d0a02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Tools">
+      <UniqueIdentifier>{6a1c3e52-1f0e-4c39-9a52-3b0f6b1d0a03}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UI">
+      <UniqueIdentifier>{6a1c3e52-1f0e-4c39-9a52-3b0f6b1d0a04}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{6a1c3e52-1f0e-4c39-9a52-3b0f6b1d0a05}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="MyPaint.h"><Filter>App</Filter></ClInclude>
+    <ClInclude Include="MyPaintDlg.h"><Filter>App</Filter></ClInclude>
+    <ClInclude Include="framework.h"><Filter>App</Filter></ClInclude>
+    <ClInclude Include="pch.h"><Filter>App</Filter></ClInclude>
+    <ClInclude Include="Resource.h"><Filter>Resources</Filter></ClInclude>
+    <ClInclude Include="targetver.h"><Filter>App</Filter></ClInclude>
+    <ClInclude Include="Core\ByteStream.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\Command.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\Document.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\FillCommand.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\History.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\ShapeCommand.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\StrokeCommand.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\Surface.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Tools\FreehandTool.h"><Filter>Tools</Filter></ClInclude>
+    <ClInclude Include="Tools\ShapeTool.h"><Filter>Tools</Filter></ClInclude>
+    <ClInclude Include="Tools\SimpleTools.h"><Filter>Tools</Filter></ClInclude>
+    <ClInclude Include="Tools\Tool.h"><Filter>Tools</Filter></ClInclude>
+    <ClInclude Include="UI\CanvasWnd.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\ToolPanel.h"><Filter>UI</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="MyPaint.cpp"><Filter>App</Filter></ClCompile>
+    <ClCompile Include="MyPaintDlg.cpp"><Filter>App</Filter></ClCompile>
+    <ClCompile Include="pch.cpp"><Filter>App</Filter></ClCompile>
+    <ClCompile Include="Core\Command.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\Document.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\FillCommand.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\History.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\ShapeCommand.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\StrokeCommand.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\Surface.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Tools\FreehandTool.cpp"><Filter>Tools</Filter></ClCompile>
+    <ClCompile Include="Tools\ShapeTool.cpp"><Filter>Tools</Filter></ClCompile>
+    <ClCompile Include="Tools\SimpleTools.cpp"><Filter>Tools</Filter></ClCompile>
+    <ClCompile Include="UI\CanvasWnd.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\ToolPanel.cpp"><Filter>UI</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="MyPaint.rc"><Filter>Resources</Filter></ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\MyPaint.rc2"><Filter>Resources</Filter></None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="res\MyPaint.ico"><Filter>Resources</Filter></Image>
+  </ItemGroup>
+</Project>

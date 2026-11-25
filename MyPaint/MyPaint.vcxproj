@@ -67,6 +67,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -94,6 +95,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -116,10 +118,36 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="Core\ByteStream.h" />
+    <ClInclude Include="Core\Command.h" />
+    <ClInclude Include="Core\Document.h" />
+    <ClInclude Include="Core\FillCommand.h" />
+    <ClInclude Include="Core\History.h" />
+    <ClInclude Include="Core\ShapeCommand.h" />
+    <ClInclude Include="Core\StrokeCommand.h" />
+    <ClInclude Include="Core\Surface.h" />
+    <ClInclude Include="Tools\FreehandTool.h" />
+    <ClInclude Include="Tools\ShapeTool.h" />
+    <ClInclude Include="Tools\SimpleTools.h" />
+    <ClInclude Include="Tools\Tool.h" />
+    <ClInclude Include="UI\CanvasWnd.h" />
+    <ClInclude Include="UI\ToolPanel.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MyPaint.cpp" />
     <ClCompile Include="MyPaintDlg.cpp" />
+    <ClCompile Include="Core\Command.cpp" />
+    <ClCompile Include="Core\Document.cpp" />
+    <ClCompile Include="Core\FillCommand.cpp" />
+    <ClCompile Include="Core\History.cpp" />
+    <ClCompile Include="Core\ShapeCommand.cpp" />
+    <ClCompile Include="Core\StrokeCommand.cpp" />
+    <ClCompile Include="Core\Surface.cpp" />
+    <ClCompile Include="Tools\FreehandTool.cpp" />
+    <ClCompile Include="Tools\ShapeTool.cpp" />
+    <ClCompile Include="Tools\SimpleTools.cpp" />
+    <ClCompile Include="UI\CanvasWnd.cpp" />
+    <ClCompile Include="UI\ToolPanel.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
