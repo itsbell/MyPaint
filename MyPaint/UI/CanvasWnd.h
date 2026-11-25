@@ -22,6 +22,12 @@ public:
 
     /** @brief 확대 배율이 바뀌었습니다. */
     virtual void OnCanvasZoomChanged(double zoom) = 0;
+
+    /** @brief 크기 조절 핸들을 끄는 중입니다. active가 false면 끝났거나 취소됐습니다. */
+    virtual void OnCanvasResizing(bool active, CSize newSize) = 0;
+
+    /** @brief 크기 조절 핸들을 놓았습니다. 캔버스를 newSize로 바꿔 달라는 요청입니다. */
+    virtual void OnCanvasResizeRequested(CSize newSize) = 0;
 };
 
 /**
@@ -109,6 +115,28 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 private:
+    /** @brief 이미지 오른쪽/아래/모서리의 캔버스 크기 조절 핸들 */
+    enum class ResizeHandle
+    {
+        None,
+        Right,
+        Bottom,
+        Corner,
+    };
+
+    /** @brief 핸들의 클라이언트 사각형 */
+    CRect HandleRect(ResizeHandle handle) const;
+
+    /** @brief client 위치에 있는 핸들 (없으면 None) */
+    ResizeHandle HitHandle(CPoint client) const;
+
+    /** @brief 핸들을 그리고, 끄는 중이면 새 크기를 점선으로 보여 줍니다. */
+    void DrawResizeHandles(CDC& dc);
+
+    void BeginResize(ResizeHandle handle);
+    void UpdateResize(CPoint client);
+    void EndResize(bool apply);
+
     void BeginDrag(CPoint clientPoint, MouseButton button, bool shift);
     void EndDrag(CPoint clientPoint, bool shift);
     void InvalidatePreview();
@@ -157,4 +185,7 @@ private:
     MouseButton m_dragButton = MouseButton::Left;
     CPoint m_lastDragPoint;  ///< 드래그 중 마지막 마우스 위치 (클라이언트 좌표)
     bool m_trackingLeave = false;
+
+    ResizeHandle m_resizing = ResizeHandle::None; ///< 끄는 중인 크기 조절 핸들
+    CSize m_resizeSize;                           ///< 끄는 중인 새 캔버스 크기
 };

@@ -8,6 +8,7 @@
 #include "Core/ByteStream.h"
 #include "Core/FillCommand.h"
 #include "Core/ImageCommands.h"
+#include "Core/PathCommand.h"
 #include "Core/ShapeCommand.h"
 #include "Core/StrokeCommand.h"
 
@@ -38,6 +39,8 @@ std::unique_ptr<Command> ReadCommand(ByteReader& reader)
         return ResizeSkewCommand::Read(reader);
     case CommandType::CanvasSize:
         return CanvasSizeCommand::Read(reader);
+    case CommandType::Path:
+        return PathCommand::Read(reader);
     }
     throw std::runtime_error("ReadCommand: 알 수 없는 명령 종류입니다.");
 }

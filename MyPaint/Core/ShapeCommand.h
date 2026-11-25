@@ -27,11 +27,31 @@ enum class ShapeKind : uint8_t
     Star5,
     Star6,
     Heart,
+    Curve,   ///< 곡선: 여러 단계로 그리며 PathCommand가 됩니다.
+    Polygon, ///< 다각형: 여러 단계로 그리며 PathCommand가 됩니다.
     Count,
 };
 
+/** @brief 도구 패널에 보여 줄 도형 순서 (그림판과 비슷하게 선, 곡선, 타원 …) */
+constexpr ShapeKind kShapeDisplayOrder[] = {
+    ShapeKind::Line,         ShapeKind::Curve,      ShapeKind::Ellipse,   ShapeKind::Rectangle,
+    ShapeKind::RoundRect,    ShapeKind::Polygon,    ShapeKind::Triangle,  ShapeKind::RightTriangle,
+    ShapeKind::Diamond,      ShapeKind::Pentagon,   ShapeKind::Hexagon,   ShapeKind::ArrowRight,
+    ShapeKind::ArrowLeft,    ShapeKind::ArrowUp,    ShapeKind::ArrowDown, ShapeKind::Star4,
+    ShapeKind::Star5,        ShapeKind::Star6,      ShapeKind::Heart,
+};
+
+/** @brief 끌기 한 번이 아니라 여러 번 클릭해서 그리는 도형인지 */
+inline bool IsPathShape(ShapeKind kind)
+{
+    return kind == ShapeKind::Curve || kind == ShapeKind::Polygon;
+}
+
 /** @brief 도구 패널 툴팁 등에 쓰는 이름 */
 const wchar_t* ShapeKindName(ShapeKind kind);
+
+/** @brief 선 그리기용 펜. 두께 1은 단순 펜, 그보다 굵으면 끝과 꺾인 곳이 둥근 펜 */
+HPEN CreateLinePen(COLORREF color, int width);
 
 /** @brief 도형의 윤곽선과 채우기 */
 struct ShapeStyle

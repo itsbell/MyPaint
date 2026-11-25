@@ -56,7 +56,7 @@ constexpr int kPaletteColumns = 10;
 constexpr int kPanelHeight = 98;
 
 /** @brief 도형 그룹과 텍스트 그룹의 폭 (도구를 바꿔도 오른쪽 그룹이 움직이지 않게 같게 둡니다) */
-constexpr int kContextGroupWidth = 232;
+constexpr int kContextGroupWidth = 250;
 
 /** @brief 회전 메뉴 항목과 명령 */
 struct RotateChoice
@@ -266,15 +266,19 @@ void CToolPanel::Layout()
     }
     else
     {
-        // 도형: 6열 격자 + 윤곽선/채우기
+        // 도형: 7열 격자 + 윤곽선/채우기
         const int cell = Scale(22);
-        constexpr int kColumns = 6;
+        constexpr int kColumns = 7;
         const int start = x;
-        for (int i = 0; i < static_cast<int>(ShapeKind::Count); ++i)
+        static_assert(std::size(kShapeDisplayOrder) == static_cast<size_t>(ShapeKind::Count),
+                      "모든 도형이 패널에 나와야 합니다.");
+        int i = 0;
+        for (const ShapeKind kind : kShapeDisplayOrder)
         {
             const CPoint topLeft(x + (i % kColumns) * cell, Scale(9) + (i / kColumns) * cell);
-            add(ItemKind::Shape, i, CRect(topLeft, CSize(cell - Scale(1), cell - Scale(1))),
-                ShapeKindName(static_cast<ShapeKind>(i)));
+            add(ItemKind::Shape, static_cast<int>(kind), CRect(topLeft, CSize(cell - Scale(1), cell - Scale(1))),
+                ShapeKindName(kind));
+            ++i;
         }
         x += kColumns * cell + Scale(8);
         const int right = start + Scale(kContextGroupWidth);

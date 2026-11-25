@@ -124,6 +124,7 @@
     <ClInclude Include="Core\FillCommand.h" />
     <ClInclude Include="Core\History.h" />
     <ClInclude Include="Core\ImageCommands.h" />
+    <ClInclude Include="Core\PathCommand.h" />
     <ClInclude Include="Core\ShapeCommand.h" />
     <ClInclude Include="Core\StrokeCommand.h" />
     <ClInclude Include="Core\Surface.h" />
@@ -147,6 +148,7 @@
     <ClCompile Include="Core\FillCommand.cpp" />
     <ClCompile Include="Core\History.cpp" />
     <ClCompile Include="Core\ImageCommands.cpp" />
+    <ClCompile Include="Core\PathCommand.cpp" />
     <ClCompile Include="Core\ShapeCommand.cpp" />
     <ClCompile Include="Core\StrokeCommand.cpp" />
     <ClCompile Include="Core\Surface.cpp" />

@@ -23,6 +23,7 @@ enum class CommandType : uint16_t
     Transform = 6,
     ResizeSkew = 7,
     CanvasSize = 8,
+    Path = 9,
 };
 
 /**

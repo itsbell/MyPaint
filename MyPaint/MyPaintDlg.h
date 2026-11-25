@@ -46,6 +46,8 @@ public:
     // ICanvasObserver
     void OnCanvasCursor(bool inside, CPoint docPoint) override;
     void OnCanvasZoomChanged(double zoom) override;
+    void OnCanvasResizing(bool active, CSize newSize) override;
+    void OnCanvasResizeRequested(CSize newSize) override;
 
     // IToolHost
     void SetToolColor(MouseButton button, COLORREF color) override;

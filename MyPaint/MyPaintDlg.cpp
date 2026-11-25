@@ -363,6 +363,24 @@ void CMyPaintDlg::OnCanvasZoomChanged(double /*zoom*/)
     UpdateStatusBar();
 }
 
+void CMyPaintDlg::OnCanvasResizing(bool active, CSize newSize)
+{
+    if (active)
+    {
+        m_statusBar.SetText(SizeText(newSize), kPartCanvasSize, 0); // 끄는 동안 새 크기를 보여 줌
+    }
+    else
+    {
+        UpdateStatusBar();
+    }
+}
+
+void CMyPaintDlg::OnCanvasResizeRequested(CSize newSize)
+{
+    // 새로 생기는 부분은 이미지 속성 대화 상자와 같이 색 2로 채웁니다.
+    ApplyCommand(std::make_unique<CanvasSizeCommand>(newSize, CPoint(0, 0), m_toolSettings.color2));
+}
+
 // ---------------------------------------------------------------------------
 // 도구
 // ---------------------------------------------------------------------------
@@ -405,6 +423,10 @@ void CMyPaintDlg::ChooseTool(ToolId tool)
         }
         m_currentTool = tool;
         m_canvas.SetTool(m_tools[static_cast<size_t>(tool)].get(), &m_toolSettings, this);
+    }
+    else if (tool == ToolId::Shape)
+    {
+        m_canvas.CommitTool(); // 다른 도형을 고르면 그리다 만 곡선/다각형을 확정합니다.
     }
     m_toolPanel.SetCurrentTool(tool);
     UpdateSelectionStatus();

@@ -30,6 +30,7 @@
     <ClInclude Include="Core\FillCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\History.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\ImageCommands.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\PathCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\ShapeCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\StrokeCommand.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\Surface.h"><Filter>Core</Filter></ClInclude>
@@ -54,6 +55,7 @@
     <ClCompile Include="Core\FillCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\History.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\ImageCommands.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\PathCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\ShapeCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\StrokeCommand.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="Core\Surface.cpp"><Filter>Core</Filter></ClCompile>

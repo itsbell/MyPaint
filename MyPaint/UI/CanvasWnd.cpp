@@ -13,14 +13,22 @@
 #include <imm.h>
 #pragma comment(lib, "imm32.lib")
 
+#include "Core/ImageCommands.h" // kMaxCanvasSide
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
 namespace
 {
-/** @brief 이미지 둘레 여백 (클라이언트 픽셀) */
-constexpr int kMargin = 5;
+/** @brief 이미지 둘레 여백 (클라이언트 픽셀). 크기 조절 핸들이 들어갈 만큼 둡니다. */
+constexpr int kMargin = 12;
+
+/** @brief 크기 조절 핸들 한 변 (클라이언트 픽셀) */
+constexpr int kHandleSize = 7;
+
+/** @brief 핸들을 잡기 쉽도록 판정 영역을 늘리는 양 */
+constexpr int kHandleSlop = 3;
 
 /** @brief 스크롤 버튼 한 번에 움직이는 양 */
 constexpr int kLineScroll = 30;
@@ -130,7 +138,11 @@ void CCanvasWnd::CommitTool()
 
 void CCanvasWnd::HandleEscape()
 {
-    if (m_dragging)
+    if (m_resizing != ResizeHandle::None)
+    {
+        EndResize(false);
+    }
+    else if (m_dragging)
     {
         CancelTool();
     }
@@ -284,6 +296,7 @@ void CCanvasWnd::OnPaint()
     }
 
     DrawOverlay(mem);
+    DrawResizeHandles(mem);
 
     dc.BitBlt(clip.left, clip.top, clip.Width(), clip.Height(), &mem, clip.left, clip.top, SRCCOPY);
     mem.SelectObject(oldBitmap);
@@ -331,6 +344,137 @@ void CCanvasWnd::DrawOverlay(CDC& dc)
     dc.SetBkMode(oldMode);
     dc.SelectObject(oldPen);
     dc.SelectObject(oldBrush);
+}
+
+// ---------------------------------------------------------------------------
+// 캔버스 크기 조절 핸들
+// ---------------------------------------------------------------------------
+
+CRect CCanvasWnd::HandleRect(ResizeHandle handle) const
+{
+    if (m_document == nullptr || handle == ResizeHandle::None)
+    {
+        return CRect();
+    }
+    const CRect image = DocToClient(CRect(CPoint(0, 0), m_document->Size()));
+    const int midX = image.left + image.Width() / 2 - kHandleSize / 2;
+    const int midY = image.top + image.Height() / 2 - kHandleSize / 2;
+    const int outX = image.right + 1; // 이미지 바로 바깥
+    const int outY = image.bottom + 1;
+    switch (handle)
+    {
+    case ResizeHandle::Right: return CRect(CPoint(outX, midY), CSize(kHandleSize, kHandleSize));
+    case ResizeHandle::Bottom: return CRect(CPoint(midX, outY), CSize(kHandleSize, kHandleSize));
+    default: return CRect(CPoint(outX, outY), CSize(kHandleSize, kHandleSize));
+    }
+}
+
+CCanvasWnd::ResizeHandle CCanvasWnd::HitHandle(CPoint client) const
+{
+    for (const ResizeHandle handle : {ResizeHandle::Corner, ResizeHandle::Right, ResizeHandle::Bottom})
+    {
+        CRect r = HandleRect(handle);
+        r.InflateRect(kHandleSlop, kHandleSlop);
+        if (r.PtInRect(client))
+        {
+            return handle;
+        }
+    }
+    return ResizeHandle::None;
+}
+
+void CCanvasWnd::DrawResizeHandles(CDC& dc)
+{
+    if (m_document == nullptr)
+    {
+        return;
+    }
+    CPen border(PS_SOLID, 1, RGB(90, 90, 90));
+    CPen* oldPen = dc.SelectObject(&border);
+    CBrush* oldBrush = static_cast<CBrush*>(dc.SelectStockObject(WHITE_BRUSH));
+    for (const ResizeHandle handle : {ResizeHandle::Right, ResizeHandle::Bottom, ResizeHandle::Corner})
+    {
+        dc.Rectangle(HandleRect(handle));
+    }
+
+    if (m_resizing != ResizeHandle::None)
+    {
+        // 놓았을 때의 캔버스 크기를 점선으로 보여 줍니다.
+        CRect r(DocToClientX(0), DocToClientY(0), DocToClientX(m_resizeSize.cx), DocToClientY(m_resizeSize.cy));
+        CPen dotted(PS_DOT, 1, RGB(0, 0, 0));
+        dc.SelectObject(&dotted);
+        dc.SelectStockObject(NULL_BRUSH);
+        const int oldMode = dc.SetBkMode(TRANSPARENT);
+        dc.Rectangle(r);
+        dc.SetBkMode(oldMode);
+        dc.SelectObject(&border); // dotted가 사라지기 전에 선택 해제
+    }
+    dc.SelectObject(oldBrush);
+    dc.SelectObject(oldPen);
+}
+
+void CCanvasWnd::BeginResize(ResizeHandle handle)
+{
+    CommitTool(); // 떠 있는 선택 영역이나 텍스트를 먼저 확정합니다.
+    SetFocus();
+    m_resizing = handle;
+    m_resizeSize = m_document->Size();
+    SetCapture();
+    Invalidate(FALSE);
+    if (m_observer != nullptr)
+    {
+        m_observer->OnCanvasResizing(true, m_resizeSize);
+    }
+}
+
+void CCanvasWnd::UpdateResize(CPoint client)
+{
+    auto toDoc = [this](int clientValue, int scroll) {
+        const double doc = (clientValue + scroll - kMargin) / m_zoom;
+        return std::clamp(static_cast<int>(std::lround(doc)), 1, kMaxCanvasSide);
+    };
+    CSize size = m_document->Size();
+    if (m_resizing == ResizeHandle::Right || m_resizing == ResizeHandle::Corner)
+    {
+        size.cx = toDoc(client.x, m_scroll.x);
+    }
+    if (m_resizing == ResizeHandle::Bottom || m_resizing == ResizeHandle::Corner)
+    {
+        size.cy = toDoc(client.y, m_scroll.y);
+    }
+    if (size == m_resizeSize)
+    {
+        return;
+    }
+    m_resizeSize = size;
+    Invalidate(FALSE);
+    if (m_observer != nullptr)
+    {
+        m_observer->OnCanvasResizing(true, m_resizeSize);
+    }
+}
+
+void CCanvasWnd::EndResize(bool apply)
+{
+    if (m_resizing == ResizeHandle::None)
+    {
+        return;
+    }
+    // ReleaseCapture가 OnCaptureChanged를 부르므로 먼저 상태를 끕니다.
+    m_resizing = ResizeHandle::None;
+    if (GetCapture() == this)
+    {
+        ReleaseCapture();
+    }
+    Invalidate(FALSE);
+    if (m_observer != nullptr)
+    {
+        m_observer->OnCanvasResizing(false, m_resizeSize);
+        if (apply && m_document != nullptr && m_resizeSize != m_document->Size())
+        {
+            m_observer->OnCanvasResizeRequested(m_resizeSize);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -567,14 +711,27 @@ void CCanvasWnd::EndDrag(CPoint clientPoint, bool shift)
 
 void CCanvasWnd::OnLButtonDown(UINT nFlags, CPoint point)
 {
-    if (!m_dragging)
+    if (m_dragging || m_resizing != ResizeHandle::None)
     {
-        BeginDrag(point, MouseButton::Left, (nFlags & MK_SHIFT) != 0);
+        return;
     }
+    const ResizeHandle handle = HitHandle(point);
+    if (handle != ResizeHandle::None && m_document != nullptr)
+    {
+        BeginResize(handle);
+        return;
+    }
+    BeginDrag(point, MouseButton::Left, (nFlags & MK_SHIFT) != 0);
 }
 
 void CCanvasWnd::OnLButtonUp(UINT nFlags, CPoint point)
 {
+    if (m_resizing != ResizeHandle::None)
+    {
+        UpdateResize(point);
+        EndResize(true);
+        return;
+    }
     if (m_dragging && m_dragButton == MouseButton::Left)
     {
         EndDrag(point, (nFlags & MK_SHIFT) != 0);
@@ -583,6 +740,11 @@ void CCanvasWnd::OnLButtonUp(UINT nFlags, CPoint point)
 
 void CCanvasWnd::OnRButtonDown(UINT nFlags, CPoint point)
 {
+    if (m_resizing != ResizeHandle::None)
+    {
+        EndResize(false); // 크기 조절 중 오른쪽 버튼: 취소
+        return;
+    }
     if (m_dragging)
     {
         // 그림판처럼, 왼쪽 드래그 중 오른쪽 버튼을 누르면 취소합니다.
@@ -615,6 +777,11 @@ void CCanvasWnd::OnMouseMove(UINT nFlags, CPoint point)
     }
     ReportCursor(point);
 
+    if (m_resizing != ResizeHandle::None)
+    {
+        UpdateResize(point);
+        return;
+    }
     if (m_dragging)
     {
         m_lastDragPoint = point;
@@ -743,6 +910,10 @@ void CCanvasWnd::OnMouseLeave()
 
 void CCanvasWnd::OnCaptureChanged(CWnd* pWnd)
 {
+    if (m_resizing != ResizeHandle::None && pWnd != this)
+    {
+        EndResize(false);
+    }
     if (m_dragging && pWnd != this)
     {
         CancelTool(); // 다른 창이 캡처를 가져가면 진행 중인 작업을 버립니다.
@@ -757,6 +928,15 @@ BOOL CCanvasWnd::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
         CPoint point;
         ::GetCursorPos(&point);
         ScreenToClient(&point);
+        const ResizeHandle handle = m_resizing != ResizeHandle::None ? m_resizing : HitHandle(point);
+        if (handle != ResizeHandle::None && !m_dragging)
+        {
+            const LPCWSTR shape = handle == ResizeHandle::Right    ? IDC_SIZEWE
+                                  : handle == ResizeHandle::Bottom ? IDC_SIZENS
+                                                                   : IDC_SIZENWSE;
+            ::SetCursor(::LoadCursor(nullptr, shape));
+            return TRUE;
+        }
         ::SetCursor(m_tool->CursorAt(ClientToDoc(point)));
         return TRUE;
     }

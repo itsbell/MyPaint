@@ -115,6 +115,8 @@ std::vector<UnitPoint> UnitPolygon(ShapeKind kind)
         return RadialPolygon(6, 0.577, -90.0);
     case ShapeKind::Heart:
         return HeartPolygon();
+    case ShapeKind::Polygon: // 패널 아이콘용 불규칙 다각형 (실제 다각형은 PathCommand로 그립니다)
+        return {{0.2, 0}, {1, 0.35}, {0.7, 1}, {0.3, 0.7}, {0, 0.8}};
     default:
         return {};
     }
@@ -130,8 +132,8 @@ int Sign(int value)
 {
     return value < 0 ? -1 : 1;
 }
+} // namespace
 
-/** @brief 선 그리기용 펜. 두께 1은 단순 펜, 그보다 굵으면 끝이 둥근 펜 */
 HPEN CreateLinePen(COLORREF color, int width)
 {
     if (width <= 1)
@@ -142,7 +144,6 @@ HPEN CreateLinePen(COLORREF color, int width)
     return ::ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND, static_cast<DWORD>(width), &lb,
                           0, nullptr);
 }
-} // namespace
 
 const wchar_t* ShapeKindName(ShapeKind kind)
 {
@@ -165,6 +166,8 @@ const wchar_t* ShapeKindName(ShapeKind kind)
     case ShapeKind::Star5: return L"5각 별";
     case ShapeKind::Star6: return L"6각 별";
     case ShapeKind::Heart: return L"하트";
+    case ShapeKind::Curve: return L"곡선 (끌어서 선을 그린 뒤 두 번 클릭해서 구부리기)";
+    case ShapeKind::Polygon: return L"다각형 (클릭으로 꼭짓점 추가, 시작점 클릭 또는 두 번 클릭으로 닫기)";
     default: return L"";
     }
 }
@@ -183,6 +186,22 @@ void DrawShape(HDC dc, ShapeKind kind, CPoint start, CPoint end, const ShapeStyl
         {
             ::SetPixelV(dc, end.x, end.y, style.outlineColor); // LineTo는 끝점을 그리지 않습니다.
         }
+        ::SelectObject(dc, oldPen);
+        ::DeleteObject(pen);
+        return;
+    }
+
+    if (kind == ShapeKind::Curve)
+    {
+        // 패널 아이콘용 S자 곡선 (실제 곡선은 PathCommand로 그립니다)
+        const CRect box = InclusiveBox(start, end);
+        const POINT points[4] = {{box.left, box.bottom},
+                                 {box.left + box.Width() / 2, box.top - box.Height() / 2},
+                                 {box.left + box.Width() / 2, box.bottom + box.Height() / 2},
+                                 {box.right, box.top}};
+        HPEN pen = CreateLinePen(style.outlineColor, width);
+        HGDIOBJ oldPen = ::SelectObject(dc, pen);
+        ::PolyBezier(dc, points, 4);
         ::SelectObject(dc, oldPen);
         ::DeleteObject(pen);
         return;
