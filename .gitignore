@@ -1,0 +1,8 @@
+# Visual Studio
+.vs/
+x64/
+obj/
+*.user
+*.aps
+*.ipch
+*.pdb
