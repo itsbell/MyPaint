@@ -1,0 +1,2 @@
+- [MyPaint plan](mypaint-project-plan.md) — Command-based architecture; real-time sharing idea built last
+- [MyPaint build env](mypaint-build-env.md) — MSBuild path, no python, min/max gotcha, headless UI test
